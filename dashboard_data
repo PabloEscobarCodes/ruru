@@ -78,6 +78,35 @@ export const PALETTE = [
   'rgb(171, 13, 130)',
 ];
 
+export type DatasetKey =
+  | 'teams.breach'
+  | 'teams.mttr'
+  | 'teams.crit'
+  | 'teams.high'
+  | 'teams.med'
+  | 'teams.low'
+  | 'trends.crit'
+  | 'trends.high'
+  | 'trends.med'
+  | 'trends.low'
+  | 'aging.crit'
+  | 'aging.high'
+  | 'aging.med'
+  | 'testType.crit'
+  | 'testType.high'
+  | 'exposure.open'
+  | 'exposure.closed';
+
+export type DataSourceKey = 'teams' | 'trends' | 'aging' | 'testType' | 'exposure';
+
+export interface DataSourceDef {
+  name: string;
+  labels: string[];
+  labelAxisName: string;
+  seriesAxisName: string;
+  series: Array<{ key: DatasetKey; label: string; color: string; values: number[] }>;
+}
+
 export const DATA_SOURCES: Record<DataSourceKey, DataSourceDef> = {
   teams: {
     name: 'Teams',
@@ -137,6 +166,34 @@ export const DATA_SOURCES: Record<DataSourceKey, DataSourceDef> = {
     ],
   },
 };
+
+export type ChartKind = 'bar' | 'stacked-bar' | 'line' | 'pie' | 'doughnut';
+export type XAxisField = 'labels' | 'series';
+
+export interface CustomChartConfig {
+  id: string;
+  title: string;
+  source: DataSourceKey;
+  chartKind: ChartKind;
+  selectedSeries: DatasetKey[];
+  xAxisField: XAxisField;
+  swapAxes: boolean;
+}
+
+export interface MockChartTemplate {
+  title: string;
+  source: DataSourceKey;
+  chartKind: ChartKind;
+  selectedSeries: DatasetKey[];
+  xAxisField: XAxisField;
+  swapAxes: boolean;
+}
+
+export interface MockQuery {
+  keywords: string[];
+  insight: string;
+  chart: MockChartTemplate;
+}
 
 export const MOCK_QUERIES: MockQuery[] = [
   {
@@ -218,3 +275,18 @@ export const MOCK_QUERIES: MockQuery[] = [
     },
   }
 ];
+
+export function findMockMatch(query: string): MockQuery | null {
+  const q = query.toLowerCase();
+  let best: { query: MockQuery; score: number } | null = null;
+  for (const m of MOCK_QUERIES) {
+    let score = 0;
+    for (const kw of m.keywords) {
+      if (q.includes(kw)) score++;
+    }
+    if (score > 0 && (!best || score > best.score)) {
+      best = { query: m, score };
+    }
+  }
+  return best?.query ?? null;
+}

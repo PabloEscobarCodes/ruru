@@ -1,0 +1,1713 @@
+'use client';
+
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Chart as ChartJS, registerables } from 'chart.js';
+import { Bar, Line, Pie, Doughnut, Chart } from 'react-chartjs-2';
+import ChartDataLabels from 'chartjs-plugin-datalabels';
+import {
+  DASHBOARD_DATA,
+  SEVERITY_COLORS,
+  DATA_SOURCES,
+  PALETTE,
+  STARTER_PROMPTS,
+  findMockMatch,
+  type DataSourceKey,
+  type DatasetKey,
+  type ChartKind,
+  type XAxisField,
+  type CustomChartConfig,
+  type MockChartTemplate,
+} from './dashboard-data';
+import { useIsDark } from './use-is-dark';
+
+ChartJS.register(...registerables, ChartDataLabels);
+
+/* ============================================================================
+ * SHARED HOOKS
+ * ========================================================================== */
+
+const useChartTheme = () => {
+  const isDark = useIsDark();
+  return {
+    isDark,
+    text: isDark ? '#FFFFFF' : 'rgb(12, 35, 60)',
+    grid: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(12,35,60,0.08)',
+    muted: isDark ? 'rgba(172,234,255,0.6)' : 'rgb(102,102,102)',
+  };
+};
+
+/* ============================================================================
+ * CARD WRAPPER  (titles use font-extrabold per spec)
+ * ========================================================================== */
+
+export function Card({
+  title,
+  children,
+  className = '',
+  headerRight,
+}: {
+  title: string;
+  children: React.ReactNode;
+  className?: string;
+  headerRight?: React.ReactNode;
+}) {
+  return (
+    <div
+      className={`flex flex-col min-h-0 min-w-0 rounded-lg border border-grey5 dark:border-white/10 bg-white dark:bg-[#111C44] p-2 shadow-sm overflow-hidden ${className}`}
+    >
+      <div className="mb-1.5 flex items-center justify-between gap-1">
+        <h3 className="flex-1 text-center text-[9px] font-extrabold uppercase tracking-[0.08em] text-kpmg-default dark:text-light-blue truncate">
+          {title}
+        </h3>
+        {headerRight}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/* ============================================================================
+ * TOGGLE GROUP
+ * ========================================================================== */
+
+export function ToggleGroup<T extends string>({
+  options,
+  value,
+  onChange,
+  className = '',
+}: {
+  options: Array<{ value: T; label: string }>;
+  value: T;
+  onChange: (v: T) => void;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`mb-1.5 flex self-center gap-0.5 rounded border border-grey5 bg-grey5/40 p-0.5 dark:border-white/10 dark:bg-[#0F172A] ${className}`}
+    >
+      {options.map((opt) => {
+        const active = opt.value === value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            className={`cursor-pointer rounded px-1.5 py-[2px] text-[7px] font-bold uppercase transition-colors ${
+              active
+                ? 'bg-kpmg-default text-white'
+                : 'bg-transparent text-grey2 dark:text-light-blue/60'
+            }`}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ============================================================================
+ * CUSTOM DROPDOWN  (replaces native <select>; gets cursor-pointer everywhere)
+ * ========================================================================== */
+
+export function Dropdown<T extends string>({
+  options,
+  value,
+  onChange,
+  placeholder = 'Select...',
+}: {
+  options: Array<{ value: T; label: string; description?: string }>;
+  value: T;
+  onChange: (v: T) => void;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const escHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    document.addEventListener('keydown', escHandler);
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      document.removeEventListener('keydown', escHandler);
+    };
+  }, [open]);
+
+  const selected = options.find((o) => o.value === value);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-grey5 bg-grey5/20 px-3 py-2 text-sm font-medium text-dark-blue transition-all hover:border-kpmg-default/50 hover:bg-white focus:border-kpmg-default focus:bg-white focus:outline-none dark:border-white/10 dark:bg-[#060B28] dark:text-white dark:hover:border-light-blue/40 dark:hover:bg-[#0F172A] dark:focus:bg-[#0F172A]"
+      >
+        <span className="truncate">{selected?.label ?? placeholder}</span>
+        <svg
+          className={`shrink-0 text-grey2 transition-transform dark:text-light-blue/60 ${
+            open ? 'rotate-180' : ''
+          }`}
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-lg border border-grey5 bg-white py-1 shadow-lg dark:border-white/10 dark:bg-[#0F172A]">
+          {options.map((opt) => {
+            const active = opt.value === value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => {
+                  onChange(opt.value);
+                  setOpen(false);
+                }}
+                className={`flex w-full cursor-pointer items-start justify-between gap-2 px-3 py-2 text-left transition-colors ${
+                  active
+                    ? 'bg-kpmg-default/10 text-kpmg-default dark:bg-light-blue/10 dark:text-light-blue'
+                    : 'text-dark-blue hover:bg-grey5/40 dark:text-white dark:hover:bg-white/5'
+                }`}
+              >
+                <div className="flex-1">
+                  <div className="text-sm font-medium">{opt.label}</div>
+                  {opt.description && (
+                    <div className="mt-0.5 text-[10px] font-normal text-grey2 dark:text-light-blue/60">
+                      {opt.description}
+                    </div>
+                  )}
+                </div>
+                {active && (
+                  <svg
+                    className="mt-0.5 shrink-0"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================================
+ * ROW 1 - KPI CARDS  (no font-extrabold inside body content)
+ * ========================================================================== */
+
+export function RiskScoreCard() {
+  const score = 67;
+  const C = 2 * Math.PI * 30;
+  const offset = C - (score / 100) * C;
+
+  return (
+    <Card title="Risk Score">
+      <div className="flex flex-1 flex-col items-center justify-center min-h-0 gap-1">
+        <div className="relative h-[68px] w-[68px]">
+          <svg width="68" height="68" style={{ transform: 'rotate(-90deg)' }}>
+            <circle cx="34" cy="34" r="30" fill="none" strokeWidth="5" className="stroke-grey5 dark:stroke-white/10" />
+            <circle
+              cx="34"
+              cy="34"
+              r="30"
+              fill="none"
+              stroke={SEVERITY_COLORS.critical}
+              strokeWidth="5"
+              strokeDasharray={C}
+              strokeDashoffset={offset}
+              strokeLinecap="round"
+            />
+          </svg>
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[18px] font-bold text-dark-blue dark:text-white">
+            {score}
+          </div>
+        </div>
+        <div className="text-[9px] font-semibold text-dark-blue dark:text-white">
+          ▲ 4 <span className="font-normal opacity-60">vs last week</span>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+export function CriticalHighCard() {
+  return (
+    <Card title="Critical & High">
+      <div className="flex flex-1 items-center justify-center min-h-0">
+        <div className="flex w-full items-center justify-around">
+          <div className="text-center">
+            <span className="block text-[18px] font-bold" style={{ color: SEVERITY_COLORS.critical }}>
+              38
+            </span>
+            <span className="text-[9px] font-semibold" style={{ color: SEVERITY_COLORS.critical }}>
+              ▲ 5
+            </span>
+          </div>
+          <div className="h-6 w-px bg-grey5 dark:bg-white/10" />
+          <div className="text-center">
+            <span className="block text-[18px] font-bold" style={{ color: SEVERITY_COLORS.high }}>
+              124
+            </span>
+            <span className="text-[9px] font-semibold text-dark-blue dark:text-white">▼ 12</span>
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+export function SlaBreachCard() {
+  const rows = [
+    { label: 'Critical', value: '31%', color: SEVERITY_COLORS.critical },
+    { label: 'High', value: '24%', color: SEVERITY_COLORS.high },
+    { label: 'Medium', value: '12%', color: SEVERITY_COLORS.medium },
+  ];
+  return (
+    <Card title="SLA Breach Rate">
+      <div className="flex flex-1 flex-col min-h-0">
+        <div className="mb-1 w-full border-b border-grey5 pb-0.5 text-center dark:border-white/10">
+          <div className="text-[16px] font-bold" style={{ color: SEVERITY_COLORS.slaBreach }}>
+            21.4%
+          </div>
+        </div>
+        <div className="grid w-full flex-1 content-around">
+          {rows.map((r) => (
+            <div key={r.label} className="flex items-center justify-between border-b border-grey5/60 py-0.5 dark:border-white/5">
+              <span className="text-[7px] font-semibold uppercase" style={{ color: r.color }}>
+                {r.label}
+              </span>
+              <span className="text-[10px] font-bold" style={{ color: r.color }}>
+                {r.value}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+export function DiscoveryRateCard() {
+  return (
+    <Card title="Discovery Rate">
+      <div className="flex flex-1 flex-col min-h-0">
+        <div className="text-center">
+          <div className="text-[18px] font-bold text-dark-blue dark:text-white leading-tight">+12.8%</div>
+          <div className="text-[8px] font-semibold mb-1" style={{ color: SEVERITY_COLORS.brand }}>
+            ▲ Weekly Trend
+          </div>
+        </div>
+        <div className="grid w-full flex-1 content-around">
+          <div className="flex items-center justify-between border-b border-grey5/60 py-0.5 dark:border-white/5">
+            <span className="text-[7px] font-semibold uppercase text-grey2 dark:text-light-blue/70">New</span>
+            <span className="text-[10px] font-bold text-dark-blue dark:text-white">412</span>
+          </div>
+          <div className="flex items-center justify-between border-b border-grey5/60 py-0.5 dark:border-white/5">
+            <span className="text-[7px] font-semibold uppercase text-grey2 dark:text-light-blue/70">Fixed</span>
+            <span className="text-[10px] font-bold text-dark-blue dark:text-white">385</span>
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+export function AssetCoverageCard() {
+  const [period, setPeriod] = useState<'month' | 'quarter'>('month');
+  const data = DASHBOARD_DATA.coverage[period];
+
+  return (
+    <Card title="Asset Coverage">
+      <ToggleGroup
+        options={[
+          { value: 'month', label: 'Monthly' },
+          { value: 'quarter', label: 'Quarterly' },
+        ]}
+        value={period}
+        onChange={setPeriod}
+      />
+      <div className="flex flex-1 flex-col min-h-0">
+        <div className="text-center text-[18px] font-bold leading-tight" style={{ color: SEVERITY_COLORS.brand }}>
+          {data.val}
+        </div>
+        <div className="grid w-full flex-1 content-around mt-1">
+          <div className="flex items-center justify-between border-b border-grey5/60 py-0.5 dark:border-white/5">
+            <span className="text-[7px] font-semibold uppercase text-grey2 dark:text-light-blue/70">Apps</span>
+            <span className="text-[10px] font-bold text-dark-blue dark:text-white">{data.app}</span>
+          </div>
+          <div className="flex items-center justify-between border-b border-grey5/60 py-0.5 dark:border-white/5">
+            <span className="text-[7px] font-semibold uppercase text-grey2 dark:text-light-blue/70">Servers</span>
+            <span className="text-[10px] font-bold text-dark-blue dark:text-white">{data.srv}</span>
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+export function AssetsAtRiskCard() {
+  const [source, setSource] = useState<'internet' | 'intranet'>('internet');
+  const data = DASHBOARD_DATA.riskAssets[source];
+
+  const rows = [
+    { label: 'Critical', value: data.crit, color: SEVERITY_COLORS.critical },
+    { label: 'High', value: data.high, color: SEVERITY_COLORS.high },
+    { label: 'Medium', value: data.med, color: SEVERITY_COLORS.medium },
+  ];
+
+  return (
+    <Card title="Assets at Risk">
+      <ToggleGroup
+        options={[
+          { value: 'internet', label: 'Internet' },
+          { value: 'intranet', label: 'Intranet' },
+        ]}
+        value={source}
+        onChange={setSource}
+      />
+      <div className="flex flex-1 flex-col justify-around min-h-0">
+        {rows.map((row) => (
+          <div key={row.label} className="w-full">
+            <div className="mb-0.5 flex items-end justify-between">
+              <span className="text-[7px] font-semibold uppercase" style={{ color: row.color }}>
+                {row.label}
+              </span>
+              <span className="text-[9px] font-bold text-dark-blue dark:text-white">
+                {row.value}/{data.total}
+              </span>
+            </div>
+            <div className="h-1 w-full rounded border border-grey5 bg-grey5/40 dark:border-white/10 dark:bg-[#060B28]">
+              <div
+                className="h-full rounded transition-all duration-700"
+                style={{ width: `${(row.value / data.total) * 100}%`, backgroundColor: row.color }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+/* ============================================================================
+ * ACTIONS TILE  — two stacked buttons in row 1 slot 7
+ * ========================================================================== */
+
+export function ActionsTile({
+  onAddChart,
+  onAskAI,
+}: {
+  onAddChart: () => void;
+  onAskAI: () => void;
+}) {
+  return (
+    <div className="flex min-h-0 min-w-0 flex-col gap-1.5 rounded-lg border border-grey5 bg-white p-1.5 shadow-sm dark:border-white/10 dark:bg-[#111C44]">
+      {/* Add Chart - top half */}
+      <button
+        type="button"
+        onClick={onAddChart}
+        className="group flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-dashed border-kpmg-default/40 bg-kpmg-default/5 transition-all hover:border-kpmg-default hover:bg-kpmg-default/10 dark:border-light-blue/30 dark:bg-light-blue/5 dark:hover:border-light-blue dark:hover:bg-light-blue/10"
+      >
+        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-kpmg-default/15 text-kpmg-default transition-transform group-hover:scale-110 dark:bg-light-blue/20 dark:text-light-blue">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+        </div>
+        <span className="text-[9px] font-bold uppercase tracking-wider text-kpmg-default dark:text-light-blue">
+          Add Chart
+        </span>
+      </button>
+
+      {/* Ask AI - bottom half */}
+      <button
+        type="button"
+        onClick={onAskAI}
+        className="group flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-dashed border-purple/40 bg-purple/5 transition-all hover:border-purple hover:bg-purple/10 dark:border-light-purple/40 dark:bg-light-purple/5 dark:hover:border-light-purple dark:hover:bg-light-purple/10"
+      >
+        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-purple/15 text-purple transition-transform group-hover:scale-110 dark:bg-light-purple/20 dark:text-light-purple">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2 L13.5 8.5 L20 10 L13.5 11.5 L12 18 L10.5 11.5 L4 10 L10.5 8.5 Z" />
+            <path d="M19 3 L19.5 5 L21.5 5.5 L19.5 6 L19 8 L18.5 6 L16.5 5.5 L18.5 5 Z" />
+          </svg>
+        </div>
+        <span className="text-[9px] font-bold uppercase tracking-wider text-purple dark:text-light-purple">
+          Ask AI
+        </span>
+      </button>
+    </div>
+  );
+}
+
+/* ============================================================================
+ * ROW 2 - LARGER CARDS
+ * ========================================================================== */
+
+export function TeamPerformanceCard() {
+  const [filter, setFilter] = useState('');
+  const theme = useChartTheme();
+
+  const filtered = useMemo(
+    () => DASHBOARD_DATA.teams.filter((t) => t.name.toLowerCase().includes(filter.toLowerCase())),
+    [filter],
+  );
+
+  const data = {
+    labels: filtered.map((t) => t.name),
+    datasets: [
+      {
+        type: 'bar' as const,
+        label: 'Breach %',
+        data: filtered.map((t) => t.breach),
+        backgroundColor: SEVERITY_COLORS.slaBreach,
+        yAxisID: 'y',
+      },
+      {
+        type: 'line' as const,
+        label: 'MTTR',
+        data: filtered.map((t) => t.mttr),
+        borderColor: SEVERITY_COLORS.brand,
+        backgroundColor: SEVERITY_COLORS.brand,
+        yAxisID: 'y1',
+        pointRadius: 3,
+      },
+    ],
+  };
+
+  const options = {
+    maintainAspectRatio: false,
+    responsive: true,
+    scales: {
+      y: { grid: { color: theme.grid }, ticks: { color: theme.text, font: { size: 9 } } },
+      y1: { position: 'right' as const, grid: { display: false }, ticks: { color: theme.text, font: { size: 9 } } },
+      x: { grid: { display: false }, ticks: { color: theme.text, font: { size: 9 } } },
+    },
+    plugins: {
+      legend: { labels: { color: theme.text, boxWidth: 10, font: { size: 9 } } },
+      datalabels: { display: false },
+    },
+  };
+
+  return (
+    <Card title="Team Performance (Breach % vs MTTR)">
+      <input
+        type="text"
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+        placeholder="Filter teams..."
+        className="mb-1.5 w-full rounded border border-grey5 bg-white px-2 py-1 text-[10px] text-dark-blue outline-none focus:border-kpmg-default dark:border-white/10 dark:bg-[#060B28] dark:text-white"
+      />
+      <div className="relative flex-1 min-h-0">
+        <Chart type="bar" data={data} options={options} />
+      </div>
+    </Card>
+  );
+}
+
+export function HeatmapCard() {
+  const [filter, setFilter] = useState('');
+  const filtered = useMemo(
+    () => DASHBOARD_DATA.teams.filter((t) => t.name.toLowerCase().includes(filter.toLowerCase())),
+    [filter],
+  );
+
+  const headerCls =
+    'sticky top-0 bg-grey5/40 px-1 py-1 text-[8px] font-bold uppercase text-grey2 dark:bg-white/5 dark:text-light-blue/60';
+  const cellCls = 'rounded p-1 text-center text-[10px] font-semibold text-dark-blue dark:text-white';
+
+  return (
+    <Card title="Vulnerability Heatmap">
+      <input
+        type="text"
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+        placeholder="Search teams..."
+        className="mb-1.5 w-full rounded border border-grey5 bg-white px-2 py-1 text-[10px] text-dark-blue outline-none focus:border-kpmg-default dark:border-white/10 dark:bg-[#060B28] dark:text-white"
+      />
+      <div className="flex-1 overflow-auto min-h-0">
+        <table className="w-full table-fixed border-separate" style={{ borderSpacing: '2px' }}>
+          <thead>
+            <tr>
+              <th className={headerCls}>Team</th>
+              <th className={headerCls}>Crit</th>
+              <th className={headerCls}>High</th>
+              <th className={headerCls}>Med</th>
+              <th className={headerCls}>Low</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((t) => (
+              <tr key={t.name}>
+                <td className="sticky left-0 rounded bg-white p-1 text-left text-[10px] font-semibold text-dark-blue dark:bg-[#111C44] dark:text-white">
+                  {t.name}
+                </td>
+                <td className={cellCls} style={{ backgroundColor: `rgba(253, 52, 156, ${t.crit / 20 + 0.1})` }}>
+                  {t.crit}
+                </td>
+                <td className={cellCls} style={{ backgroundColor: `rgba(114, 19, 234, ${t.high / 60 + 0.1})` }}>
+                  {t.high}
+                </td>
+                <td className={cellCls} style={{ backgroundColor: `rgba(30, 73, 226, ${t.med / 100 + 0.1})` }}>
+                  {t.med}
+                </td>
+                <td
+                  className="rounded p-1 text-center text-[10px] font-semibold"
+                  style={{ backgroundColor: 'rgba(0, 184, 245, 0.15)', color: SEVERITY_COLORS.low }}
+                >
+                  {t.low}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+export function DiscoveryTrendsCard() {
+  const [period, setPeriod] = useState<'monthly' | 'quarterly'>('monthly');
+  const theme = useChartTheme();
+  const trend = DASHBOARD_DATA.trends[period];
+
+  const data = {
+    labels: trend.labels,
+    datasets: [
+      { label: 'Critical', data: trend.crit, backgroundColor: SEVERITY_COLORS.critical },
+      { label: 'High', data: trend.high, backgroundColor: SEVERITY_COLORS.high },
+      { label: 'Medium', data: trend.med, backgroundColor: SEVERITY_COLORS.medium },
+    ],
+  };
+
+  const options = {
+    maintainAspectRatio: false,
+    responsive: true,
+    layout: { padding: { top: 14 } },
+    scales: {
+      x: { stacked: true, grid: { display: false }, ticks: { color: theme.text, font: { size: 9 } } },
+      y: { stacked: true, grid: { color: theme.grid }, ticks: { color: theme.text, font: { size: 9 } } },
+    },
+    plugins: {
+      legend: { display: false },
+      datalabels: {
+        color: theme.text,
+        anchor: 'end' as const,
+        align: 'top' as const,
+        font: { weight: 700 as const, size: 8 },
+        formatter: (_v: number, ctx: any) => {
+          const ds = ctx.chart.data.datasets;
+          if (ctx.datasetIndex === ds.length - 1) {
+            return ds.reduce((s: number, d: any) => s + d.data[ctx.dataIndex], 0);
+          }
+          return null;
+        },
+      },
+    },
+  };
+
+  return (
+    <Card title="Discovery Trends">
+      <ToggleGroup
+        options={[
+          { value: 'monthly', label: 'Monthly' },
+          { value: 'quarterly', label: 'Quarterly' },
+        ]}
+        value={period}
+        onChange={setPeriod}
+      />
+      <div className="relative flex-1 min-h-0">
+        <Bar data={data} options={options} />
+      </div>
+    </Card>
+  );
+}
+
+/* ============================================================================
+ * ROW 3 - SMALLER CHART CARDS
+ * ========================================================================== */
+
+export function RecurrenceCard() {
+  const theme = useChartTheme();
+  const data = {
+    labels: DASHBOARD_DATA.recurrence.labels,
+    datasets: [
+      {
+        data: DASHBOARD_DATA.recurrence.rates,
+        backgroundColor: [
+          SEVERITY_COLORS.critical,
+          SEVERITY_COLORS.high,
+          SEVERITY_COLORS.medium,
+          SEVERITY_COLORS.low,
+        ],
+        borderRadius: 4,
+      },
+    ],
+  };
+  const options = {
+    indexAxis: 'y' as const,
+    maintainAspectRatio: false,
+    responsive: true,
+    layout: { padding: { right: 30 } },
+    scales: {
+      x: {
+        grid: { color: theme.grid },
+        ticks: { color: theme.text, font: { size: 9 }, callback: (v: any) => v + '%' },
+        max: 100,
+      },
+      y: { grid: { display: false }, ticks: { color: theme.text, font: { size: 9 } } },
+    },
+    plugins: {
+      legend: { display: false },
+      datalabels: {
+        color: theme.text,
+        anchor: 'end' as const,
+        align: 'right' as const,
+        offset: 2,
+        font: { weight: 700 as const, size: 9 },
+        formatter: (v: number) => v + '%',
+      },
+    },
+  };
+  return (
+    <Card title="Recurrence Rate (%)">
+      <div className="relative flex-1 min-h-0">
+        <Bar data={data} options={options} />
+      </div>
+    </Card>
+  );
+}
+
+export function AgingCard() {
+  const theme = useChartTheme();
+  const a = DASHBOARD_DATA.aging;
+  const data = {
+    labels: a.labels,
+    datasets: [
+      { label: 'Critical', data: a.crit, backgroundColor: SEVERITY_COLORS.critical },
+      { label: 'High', data: a.high, backgroundColor: SEVERITY_COLORS.high },
+      { label: 'Medium', data: a.med, backgroundColor: SEVERITY_COLORS.medium },
+    ],
+  };
+  const options = {
+    indexAxis: 'y' as const,
+    maintainAspectRatio: false,
+    responsive: true,
+    layout: { padding: { right: 30 } },
+    scales: {
+      x: { stacked: true, grid: { color: theme.grid }, ticks: { color: theme.text, font: { size: 9 } } },
+      y: { stacked: true, grid: { display: false }, ticks: { color: theme.text, font: { size: 9 } } },
+    },
+    plugins: {
+      legend: { display: false },
+      datalabels: {
+        color: theme.text,
+        anchor: 'end' as const,
+        align: 'right' as const,
+        font: { weight: 700 as const, size: 9 },
+        formatter: (_v: number, ctx: any) => {
+          const ds = ctx.chart.data.datasets;
+          if (ctx.datasetIndex === ds.length - 1) {
+            return ds.reduce((s: number, d: any) => s + d.data[ctx.dataIndex], 0);
+          }
+          return null;
+        },
+      },
+    },
+  };
+  return (
+    <Card title="Aging Buckets">
+      <div className="relative flex-1 min-h-0">
+        <Bar data={data} options={options} />
+      </div>
+    </Card>
+  );
+}
+
+export function TestTypeCard() {
+  const theme = useChartTheme();
+  const t = DASHBOARD_DATA.testType;
+  const data = {
+    labels: t.labels,
+    datasets: [
+      { label: 'Critical', data: t.crit, backgroundColor: SEVERITY_COLORS.critical },
+      { label: 'High', data: t.high, backgroundColor: SEVERITY_COLORS.high },
+    ],
+  };
+  const options = {
+    maintainAspectRatio: false,
+    responsive: true,
+    layout: { padding: { top: 14 } },
+    scales: {
+      x: { stacked: true, grid: { display: false }, ticks: { color: theme.text, font: { size: 9 } } },
+      y: { stacked: true, grid: { color: theme.grid }, ticks: { color: theme.text, font: { size: 9 } } },
+    },
+    plugins: {
+      legend: { display: false },
+      datalabels: {
+        color: theme.text,
+        anchor: 'end' as const,
+        align: 'top' as const,
+        font: { weight: 700 as const, size: 8 },
+        formatter: (_v: number, ctx: any) => {
+          const ds = ctx.chart.data.datasets;
+          if (ctx.datasetIndex === ds.length - 1) {
+            return ds.reduce((s: number, d: any) => s + d.data[ctx.dataIndex], 0);
+          }
+          return null;
+        },
+      },
+    },
+  };
+  return (
+    <Card title="Findings by Origin">
+      <div className="relative flex-1 min-h-0">
+        <Bar data={data} options={options} />
+      </div>
+    </Card>
+  );
+}
+
+export function ExposureCard() {
+  const theme = useChartTheme();
+  const e = DASHBOARD_DATA.exposure;
+  const data = {
+    labels: e.labels,
+    datasets: [
+      { label: 'Open', data: e.open, borderColor: SEVERITY_COLORS.critical, backgroundColor: SEVERITY_COLORS.critical, tension: 0.4, pointRadius: 2 },
+      { label: 'Closed', data: e.closed, borderColor: SEVERITY_COLORS.brand, backgroundColor: SEVERITY_COLORS.brand, tension: 0.4, pointRadius: 2 },
+    ],
+  };
+  const options = {
+    maintainAspectRatio: false,
+    responsive: true,
+    scales: {
+      x: { grid: { display: false }, ticks: { color: theme.text, font: { size: 9 } } },
+      y: { grid: { color: theme.grid }, ticks: { color: theme.text, font: { size: 9 } } },
+    },
+    plugins: { legend: { display: false }, datalabels: { display: false } },
+  };
+  return (
+    <Card title="Open vs Closed Velocity">
+      <div className="relative flex-1 min-h-0">
+        <Line data={data} options={options} />
+      </div>
+      <div className="mt-1 flex flex-shrink-0 justify-center gap-1.5">
+        <div
+          className="rounded px-1.5 py-0.5 text-[8px] font-semibold"
+          style={{ backgroundColor: 'rgba(253, 52, 156, 0.12)', color: SEVERITY_COLORS.critical }}
+        >
+          Reported: 650
+        </div>
+        <div
+          className="rounded px-1.5 py-0.5 text-[8px] font-semibold"
+          style={{ backgroundColor: 'rgba(0, 51, 141, 0.12)', color: SEVERITY_COLORS.brand }}
+        >
+          Resolved: 641
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/* ============================================================================
+ * CHART VIEW — shared chart renderer used by CustomChartCard and chat preview
+ * ========================================================================== */
+
+export function ChartView({ config }: { config: CustomChartConfig | MockChartTemplate }) {
+  const theme = useChartTheme();
+  const source = DATA_SOURCES[config.source];
+  const series = source.series.filter((s) => config.selectedSeries.includes(s.key));
+
+  if (series.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center text-[10px] text-grey3 dark:text-light-blue/60">
+        No data selected
+      </div>
+    );
+  }
+
+  const isCircular = config.chartKind === 'pie' || config.chartKind === 'doughnut';
+  const transposed = config.xAxisField === 'series';
+
+  // ----- Build data based on xAxisField (transposition) -----
+  let chartData: any;
+
+  if (isCircular) {
+    if (transposed) {
+      chartData = {
+        labels: series.map((s) => s.label),
+        datasets: [
+          {
+            data: series.map((s) => s.values.reduce((a, b) => a + b, 0)),
+            backgroundColor: series.map((s) => s.color),
+            borderWidth: 1,
+            borderColor: theme.isDark ? '#111C44' : '#FFFFFF',
+          },
+        ],
+      };
+    } else {
+      chartData = {
+        labels: source.labels,
+        datasets: [
+          {
+            data: source.labels.map((_, i) =>
+              series.reduce((sum, s) => sum + s.values[i], 0),
+            ),
+            backgroundColor: source.labels.map((_, i) => PALETTE[i % PALETTE.length]),
+            borderWidth: 1,
+            borderColor: theme.isDark ? '#111C44' : '#FFFFFF',
+          },
+        ],
+      };
+    }
+  } else if (transposed) {
+    chartData = {
+      labels: series.map((s) => s.label),
+      datasets: source.labels.map((label, i) => ({
+        label,
+        data: series.map((s) => s.values[i]),
+        backgroundColor: PALETTE[i % PALETTE.length],
+        borderColor: PALETTE[i % PALETTE.length],
+        tension: 0.4,
+        pointRadius: 2,
+        fill: false,
+      })),
+    };
+  } else {
+    chartData = {
+      labels: source.labels,
+      datasets: series.map((s) => ({
+        label: s.label,
+        data: s.values,
+        backgroundColor: s.color,
+        borderColor: s.color,
+        tension: 0.4,
+        pointRadius: 2,
+        fill: false,
+      })),
+    };
+  }
+
+  // ----- Options -----
+  const baseOptions: any = {
+    maintainAspectRatio: false,
+    responsive: true,
+    plugins: {
+      legend: {
+        display: true,
+        position: 'bottom' as const,
+        labels: { color: theme.text, font: { size: 9 }, boxWidth: 8, padding: 4 },
+      },
+      datalabels: { display: false },
+    },
+  };
+
+  if (!isCircular) {
+    const stacked = config.chartKind === 'stacked-bar';
+    baseOptions.scales = {
+      x: {
+        stacked,
+        grid: { display: false },
+        ticks: { color: theme.text, font: { size: 9 } },
+      },
+      y: {
+        stacked,
+        grid: { color: theme.grid },
+        ticks: { color: theme.text, font: { size: 9 } },
+      },
+    };
+    if (config.swapAxes) {
+      baseOptions.indexAxis = 'y';
+    }
+  }
+
+  switch (config.chartKind) {
+    case 'line':
+      return <Line data={chartData} options={baseOptions} />;
+    case 'pie':
+      return <Pie data={chartData} options={baseOptions} />;
+    case 'doughnut':
+      return <Doughnut data={chartData} options={baseOptions} />;
+    case 'bar':
+    case 'stacked-bar':
+    default:
+      return <Bar data={chartData} options={baseOptions} />;
+  }
+}
+
+/* ============================================================================
+ * CUSTOM CHART CARD - thin wrapper around ChartView
+ * ========================================================================== */
+
+export function CustomChartCard({
+  config,
+  onRemove,
+}: {
+  config: CustomChartConfig;
+  onRemove: () => void;
+}) {
+  const removeBtn = (
+    <button
+      onClick={onRemove}
+      className="cursor-pointer text-[11px] text-grey3 transition-colors hover:text-pink dark:text-light-blue/60 dark:hover:text-pink"
+      aria-label="Remove chart"
+      title="Remove chart"
+    >
+      ✕
+    </button>
+  );
+
+  return (
+    <Card title={config.title} headerRight={removeBtn}>
+      <div className="relative flex-1 min-h-0">
+        <ChartView config={config} />
+      </div>
+    </Card>
+  );
+}
+
+/* ============================================================================
+ * CHART KIND TILES (for the modal)
+ * ========================================================================== */
+
+const CHART_KIND_OPTIONS: Array<{ value: ChartKind; label: string; icon: React.ReactNode }> = [
+  {
+    value: 'bar',
+    label: 'Bar',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="4" y="12" width="3.5" height="8" rx="0.5" />
+        <rect x="10.25" y="7" width="3.5" height="13" rx="0.5" />
+        <rect x="16.5" y="3" width="3.5" height="17" rx="0.5" />
+      </svg>
+    ),
+  },
+  {
+    value: 'stacked-bar',
+    label: 'Stacked',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="4" y="14" width="4" height="6" rx="0.5" />
+        <rect x="4" y="9" width="4" height="4" rx="0.5" />
+        <rect x="10" y="11" width="4" height="9" rx="0.5" />
+        <rect x="10" y="6" width="4" height="4" rx="0.5" />
+        <rect x="16" y="8" width="4" height="12" rx="0.5" />
+        <rect x="16" y="3" width="4" height="4" rx="0.5" />
+      </svg>
+    ),
+  },
+  {
+    value: 'line',
+    label: 'Line',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="3 17 8 12 13 15 21 6" />
+        <circle cx="3" cy="17" r="1.2" fill="currentColor" />
+        <circle cx="8" cy="12" r="1.2" fill="currentColor" />
+        <circle cx="13" cy="15" r="1.2" fill="currentColor" />
+        <circle cx="21" cy="6" r="1.2" fill="currentColor" />
+      </svg>
+    ),
+  },
+  {
+    value: 'pie',
+    label: 'Pie',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 3 L12 12 L21 12" />
+        <path d="M12 12 L4 17" />
+      </svg>
+    ),
+  },
+  {
+    value: 'doughnut',
+    label: 'Doughnut',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="9" />
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 3 L12 8" />
+        <path d="M21 12 L16 12" />
+      </svg>
+    ),
+  },
+];
+
+/* ============================================================================
+ * CHART BUILDER MODAL
+ * ========================================================================== */
+
+export function ChartBuilderModal({
+  open,
+  onClose,
+  onCreate,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCreate: (cfg: CustomChartConfig) => void;
+}) {
+  const [title, setTitle] = useState('My Custom Chart');
+  const [source, setSource] = useState<DataSourceKey>('teams');
+  const [chartKind, setChartKind] = useState<ChartKind>('bar');
+  const [selected, setSelected] = useState<DatasetKey[]>([]);
+  const [xAxisField, setXAxisField] = useState<XAxisField>('labels');
+  const [swapAxes, setSwapAxes] = useState(false);
+
+  // Reset selections + axis when source changes
+  useEffect(() => {
+    setSelected([]);
+    setXAxisField('labels');
+  }, [source]);
+
+  // Lock body scroll
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
+
+  if (!open) return null;
+
+  const sourceDef = DATA_SOURCES[source];
+  const isCircular = chartKind === 'pie' || chartKind === 'doughnut';
+
+  const toggleSeries = (key: DatasetKey) => {
+    setSelected((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  };
+
+  const canCreate = selected.length > 0 && title.trim().length > 0;
+
+  const handleCreate = () => {
+    if (!canCreate) return;
+    onCreate({
+      id: `custom-${Date.now()}`,
+      title: title.trim(),
+      source,
+      chartKind,
+      selectedSeries: selected,
+      xAxisField,
+      swapAxes,
+    });
+    setTitle('My Custom Chart');
+    setSelected([]);
+    setXAxisField('labels');
+    setSwapAxes(false);
+    onClose();
+  };
+
+  // X-axis options derived from the source
+  const xAxisOptions: Array<{ value: XAxisField; label: string; description: string }> = [
+    {
+      value: 'labels',
+      label: sourceDef.labelAxisName,
+      description: 'Default — group data by source labels',
+    },
+    {
+      value: 'series',
+      label: sourceDef.seriesAxisName,
+      description: 'Transpose — group data by selected series',
+    },
+  ];
+
+  const sourceOptions = (Object.keys(DATA_SOURCES) as DataSourceKey[]).map((k) => ({
+    value: k,
+    label: DATA_SOURCES[k].name,
+  }));
+
+  return (
+    <div
+      className="fixed inset-0 !z-[9999] flex items-center justify-center bg-dark-blue/50 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-[#111C44]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between border-b border-grey5 px-6 py-4 dark:border-white/10">
+          <div>
+            <h2 className="text-base font-bold text-dark-blue dark:text-white">
+              Build a Custom Chart
+            </h2>
+            <p className="mt-0.5 text-xs font-normal text-grey2 dark:text-light-blue/60">
+              Choose your data, the X-axis, chart type, and series.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="ml-4 flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-grey2 transition-colors hover:bg-grey5/40 hover:text-dark-blue dark:text-light-blue/60 dark:hover:bg-white/5 dark:hover:text-white"
+            aria-label="Close"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            {/* LEFT COLUMN */}
+            <div className="space-y-5">
+              {/* Title */}
+              <div>
+                <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-grey2 dark:text-light-blue/70">
+                  Chart Title
+                </label>
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Untitled chart"
+                  className="w-full rounded-lg border border-grey5 bg-grey5/20 px-3 py-2 text-sm text-dark-blue outline-none transition-colors focus:border-kpmg-default focus:bg-white dark:border-white/10 dark:bg-[#060B28] dark:text-white dark:focus:bg-[#0F172A]"
+                />
+              </div>
+
+              {/* Data Source */}
+              <div>
+                <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-grey2 dark:text-light-blue/70">
+                  Data Source
+                </label>
+                <Dropdown<DataSourceKey>
+                  options={sourceOptions}
+                  value={source}
+                  onChange={setSource}
+                />
+              </div>
+
+              {/* X-Axis */}
+              <div>
+                <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-grey2 dark:text-light-blue/70">
+                  X-Axis
+                </label>
+                <Dropdown<XAxisField>
+                  options={xAxisOptions}
+                  value={xAxisField}
+                  onChange={setXAxisField}
+                />
+              </div>
+
+              {/* Chart Type */}
+              <div>
+                <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-grey2 dark:text-light-blue/70">
+                  Chart Type
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {CHART_KIND_OPTIONS.map((opt) => {
+                    const active = opt.value === chartKind;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setChartKind(opt.value)}
+                        className={`group flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border p-3 transition-all ${
+                          active
+                            ? 'border-kpmg-default bg-kpmg-default/10 text-kpmg-default shadow-sm dark:border-light-blue dark:bg-light-blue/10 dark:text-light-blue'
+                            : 'border-grey5 bg-white text-grey1 hover:border-kpmg-default/40 hover:bg-grey5/30 dark:border-white/10 dark:bg-[#060B28] dark:text-light-blue/70 dark:hover:border-light-blue/40 dark:hover:bg-white/5'
+                        }`}
+                      >
+                        <div className="h-6 w-6">{opt.icon}</div>
+                        <span className="text-[10px] font-bold">{opt.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Swap Axes */}
+              
+            </div>
+
+            {/* RIGHT COLUMN — Series Picker */}
+            <div>
+              <label className="mb-1.5 flex items-center justify-between text-[11px] font-bold uppercase tracking-wide text-grey2 dark:text-light-blue/70">
+                <span>Data Points</span>
+                <span className="rounded-full bg-grey5/40 px-2 py-0.5 text-[10px] font-medium normal-case text-grey1 dark:bg-white/10 dark:text-light-blue">
+                  {selected.length} selected
+                </span>
+              </label>
+              <div className="max-h-[420px] space-y-1 overflow-y-auto rounded-lg border border-grey5 bg-grey5/10 p-1.5 dark:border-white/10 dark:bg-[#060B28]/50">
+                {sourceDef.series.map((s) => {
+                  const checked = selected.includes(s.key);
+                  return (
+                    <button
+                      key={s.key}
+                      type="button"
+                      onClick={() => toggleSeries(s.key)}
+                      className={`flex w-full cursor-pointer items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${
+                        checked
+                          ? 'bg-white shadow-sm dark:bg-[#0F172A]'
+                          : 'hover:bg-white/60 dark:hover:bg-white/5'
+                      }`}
+                    >
+                      <div
+                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
+                          checked
+                            ? 'border-kpmg-default bg-kpmg-default'
+                            : 'border-grey5 bg-white dark:border-white/20 dark:bg-transparent'
+                        }`}
+                      >
+                        {checked && (
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        )}
+                      </div>
+                      <span className="h-3 w-3 shrink-0 rounded" style={{ backgroundColor: s.color }} />
+                      <span className="flex-1 text-sm font-medium text-dark-blue dark:text-white">
+                        {s.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {selected.length === 0 && (
+                <p className="mt-2 text-[10px] font-medium text-pink">
+                  Select at least one data point to enable the chart.
+                </p>
+              )}
+              <div>
+                <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-grey2 dark:text-light-blue/70">
+                  Orientation
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setSwapAxes((v) => !v)}
+                  disabled={isCircular}
+                  className={`flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg border px-3 py-2 transition-all ${
+                    isCircular
+                      ? 'cursor-not-allowed border-grey5 bg-grey5/20 opacity-50 dark:border-white/10 dark:bg-[#060B28]'
+                      : swapAxes
+                      ? 'border-kpmg-default bg-kpmg-default/10 text-kpmg-default shadow-sm dark:border-light-blue dark:bg-light-blue/10 dark:text-light-blue'
+                      : 'border-grey5 bg-grey5/20 text-dark-blue hover:border-kpmg-default/40 hover:bg-white dark:border-white/10 dark:bg-[#060B28] dark:text-white dark:hover:border-light-blue/40 dark:hover:bg-[#0F172A]'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="17 1 21 5 17 9" />
+                      <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                      <polyline points="7 23 3 19 7 15" />
+                      <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+                    </svg>
+                    <span className="text-sm font-medium">Swap X ↔ Y</span>
+                  </div>
+                  <span
+                    className={`relative inline-flex h-4 w-7 shrink-0 rounded-full transition-colors ${
+                      swapAxes && !isCircular
+                        ? 'bg-kpmg-default dark:bg-light-blue'
+                        : 'bg-grey5 dark:bg-white/15'
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform ${
+                        swapAxes && !isCircular ? 'translate-x-3.5' : 'translate-x-0.5'
+                      }`}
+                    />
+                  </span>
+                </button>
+                {isCircular && (
+                  <p className="mt-1.5 text-[10px] text-grey2 dark:text-light-blue/60">
+                    Not applicable for pie / doughnut charts.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 border-t border-grey5 px-6 py-3 dark:border-white/10">
+          <button
+            onClick={onClose}
+            className="cursor-pointer rounded-lg px-4 py-2 text-sm font-semibold text-grey1 transition-colors hover:bg-grey5/40 dark:text-light-blue/80 dark:hover:bg-white/5"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleCreate}
+            disabled={!canCreate}
+            className="cursor-pointer rounded-lg bg-kpmg-default px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:opacity-90 hover:shadow disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
+          >
+            Add Chart
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================================
+ * CHAT PANEL — slide-in from right, mock AI assistant
+ * ========================================================================== */
+
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'bot';
+  text?: string;
+  insight?: string;
+  chart?: MockChartTemplate;
+  added?: boolean; // tracks whether the chart in this msg has been added to dashboard
+}
+
+const FALLBACK_INSIGHT =
+  "I'm not sure how to interpret that. Try asking about teams, severity trends, SLA breaches, vulnerability ages, or scan origins. You can also pick a starter prompt below.";
+
+export function ChatPanel({
+  open,
+  onClose,
+  onAddChart,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onAddChart: (cfg: CustomChartConfig) => void;
+}) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [typing, setTyping] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom on new messages
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages, typing]);
+
+  // Esc closes the panel
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open, onClose]);
+
+  const send = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    const userMsg: ChatMessage = {
+      id: `u-${Date.now()}`,
+      role: 'user',
+      text: trimmed,
+    };
+    setMessages((prev) => [...prev, userMsg]);
+    setInput('');
+    setTyping(true);
+
+    // Simulate bot thinking time
+    setTimeout(() => {
+      const match = findMockMatch(trimmed);
+      const botMsg: ChatMessage = match
+        ? {
+            id: `b-${Date.now()}`,
+            role: 'bot',
+            insight: match.insight,
+            chart: match.chart,
+          }
+        : {
+            id: `b-${Date.now()}`,
+            role: 'bot',
+            insight: FALLBACK_INSIGHT,
+          };
+      setMessages((prev) => [...prev, botMsg]);
+      setTyping(false);
+    }, 600);
+  };
+
+  const handleAddToDashboard = (msgId: string, chart: MockChartTemplate) => {
+    onAddChart({
+      id: `custom-${Date.now()}`,
+      title: chart.title,
+      source: chart.source,
+      chartKind: chart.chartKind,
+      selectedSeries: chart.selectedSeries,
+      xAxisField: chart.xAxisField,
+      swapAxes: chart.swapAxes,
+    });
+    setMessages((prev) =>
+      prev.map((m) => (m.id === msgId ? { ...m, added: true } : m)),
+    );
+  };
+
+  const handleStarter = (prompt: string) => send(prompt);
+
+  return (
+    <>
+      {/* Backdrop */}
+      {open && (
+        <div
+          className="fixed !z-[9999]  inset-0 z-30 bg-dark-blue/30 backdrop-blur-[2px]"
+          onClick={onClose}
+        />
+      )}
+
+      {/* Panel */}
+      <aside
+        className={`fixed !z-[9999] inset-y-0 right-0 z-40 flex w-full max-w-[420px] transform flex-col border-l border-grey5 bg-white shadow-2xl transition-transform duration-300 dark:border-white/10 dark:bg-[#111C44] ${
+          open ? 'translate-x-0' : 'translate-x-full'
+        }`}
+        aria-hidden={!open}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-grey5 px-4 py-3 dark:border-white/10">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple/15 text-purple dark:bg-light-purple/20 dark:text-light-purple">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2 L13.5 8.5 L20 10 L13.5 11.5 L12 18 L10.5 11.5 L4 10 L10.5 8.5 Z" />
+                <path d="M19 3 L19.5 5 L21.5 5.5 L19.5 6 L19 8 L18.5 6 L16.5 5.5 L18.5 5 Z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-dark-blue dark:text-white">AI Assistant</h2>
+              <p className="text-[10px] font-normal text-grey2 dark:text-light-blue/60">
+                Ask about your security data
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-grey2 transition-colors hover:bg-grey5/40 hover:text-dark-blue dark:text-light-blue/60 dark:hover:bg-white/5 dark:hover:text-white"
+            aria-label="Close chat"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Messages */}
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
+          {messages.length === 0 ? (
+            <ChatWelcome onPick={handleStarter} />
+          ) : (
+            <div className="flex flex-col gap-3">
+              {messages.map((msg) =>
+                msg.role === 'user' ? (
+                  <UserBubble key={msg.id} text={msg.text ?? ''} />
+                ) : (
+                  <BotBubble
+                    key={msg.id}
+                    insight={msg.insight ?? ''}
+                    chart={msg.chart}
+                    added={msg.added}
+                    onAdd={() =>
+                      msg.chart && handleAddToDashboard(msg.id, msg.chart)
+                    }
+                  />
+                ),
+              )}
+              {typing && <TypingIndicator />}
+            </div>
+          )}
+        </div>
+
+        {/* Input */}
+        <div className="border-t border-grey5 p-3 dark:border-white/10">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              send(input);
+            }}
+            className="flex items-end gap-2"
+          >
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  send(input);
+                }
+              }}
+              rows={1}
+              placeholder="Ask about your data..."
+              className="flex-1 resize-none rounded-lg border border-grey5 bg-grey5/20 px-3 py-2 text-sm text-dark-blue outline-none transition-colors focus:border-kpmg-default focus:bg-white dark:border-white/10 dark:bg-[#060B28] dark:text-white dark:focus:bg-[#0F172A]"
+              style={{ minHeight: '38px', maxHeight: '100px' }}
+            />
+            <button
+              type="submit"
+              disabled={!input.trim() || typing}
+              className="flex h-[38px] w-[38px] cursor-pointer items-center justify-center rounded-lg bg-purple text-white shadow-sm transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-light-purple dark:text-dark-blue"
+              aria-label="Send"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13" />
+                <polygon points="22 2 15 22 11 13 2 9 22 2" />
+              </svg>
+            </button>
+          </form>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+/* ----- Chat sub-components ----- */
+
+function ChatWelcome({ onPick }: { onPick: (prompt: string) => void }) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="rounded-xl bg-purple/8 p-3 dark:bg-light-purple/10">
+        <div className="text-sm font-semibold text-dark-blue dark:text-white">
+          👋 Hi there!
+        </div>
+        <div className="mt-1 text-xs font-normal text-grey1 dark:text-light-blue/80">
+          I can help you analyze your vulnerability data and build charts. Try
+          one of these to get started:
+        </div>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <div className="text-[10px] font-bold uppercase tracking-wide text-grey2 dark:text-light-blue/60">
+          Suggested Prompts
+        </div>
+        {STARTER_PROMPTS.map((p) => (
+          <button
+            key={p}
+            onClick={() => onPick(p)}
+            className="cursor-pointer rounded-lg border border-grey5 bg-white px-3 py-2 text-left text-xs font-medium text-dark-blue transition-all hover:border-purple/50 hover:bg-purple/5 hover:shadow-sm dark:border-white/10 dark:bg-[#0F172A] dark:text-white dark:hover:border-light-purple/50 dark:hover:bg-light-purple/5"
+          >
+            {p}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function UserBubble({ text }: { text: string }) {
+  return (
+    <div className="flex justify-end">
+      <div className="max-w-[85%] rounded-2xl rounded-br-md bg-kpmg-default px-3 py-2 text-sm text-white shadow-sm">
+        {text}
+      </div>
+    </div>
+  );
+}
+
+function BotBubble({
+  insight,
+  chart,
+  added,
+  onAdd,
+}: {
+  insight: string;
+  chart?: MockChartTemplate;
+  added?: boolean;
+  onAdd: () => void;
+}) {
+  return (
+    <div className="flex justify-start">
+      <div className="flex max-w-[92%] gap-2">
+        <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-purple/15 text-purple dark:bg-light-purple/20 dark:text-light-purple">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2 L13.5 8.5 L20 10 L13.5 11.5 L12 18 L10.5 11.5 L4 10 L10.5 8.5 Z" />
+          </svg>
+        </div>
+        <div className="flex flex-1 flex-col gap-2">
+          {/* Insight */}
+          <div className="rounded-2xl rounded-tl-md border border-grey5 bg-grey5/30 px-3 py-2 text-sm leading-relaxed text-dark-blue dark:border-white/10 dark:bg-[#0F172A] dark:text-white">
+            {insight}
+          </div>
+
+          {/* Chart preview */}
+          {chart && (
+            <div className="overflow-hidden rounded-xl border border-grey5 bg-white shadow-sm dark:border-white/10 dark:bg-[#0F172A]">
+              <div className="border-b border-grey5 px-3 py-1.5 dark:border-white/10">
+                <div className="text-[10px] font-extrabold uppercase tracking-wider text-kpmg-default dark:text-light-blue">
+                  {chart.title}
+                </div>
+              </div>
+              <div className="relative h-[180px] p-2">
+                <ChartView config={chart} />
+              </div>
+              <div className="border-t border-grey5 bg-grey5/20 px-3 py-2 dark:border-white/10 dark:bg-[#060B28]">
+                {added ? (
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-dark-green dark:text-light-green">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                    Added to dashboard
+                  </div>
+                ) : (
+                  <button
+                    onClick={onAdd}
+                    className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-md bg-kpmg-default px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm transition-all hover:opacity-90"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                      <line x1="12" y1="5" x2="12" y2="19" />
+                      <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                    Add to Dashboard
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TypingIndicator() {
+  return (
+    <div className="flex justify-start">
+      <div className="flex gap-2">
+        <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-purple/15 text-purple dark:bg-light-purple/20 dark:text-light-purple">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2 L13.5 8.5 L20 10 L13.5 11.5 L12 18 L10.5 11.5 L4 10 L10.5 8.5 Z" />
+          </svg>
+        </div>
+        <div className="flex items-center gap-1 rounded-2xl rounded-tl-md border border-grey5 bg-grey5/30 px-3 py-2.5 dark:border-white/10 dark:bg-[#0F172A]">
+          <span
+            className="h-1.5 w-1.5 animate-bounce rounded-full bg-grey3 dark:bg-light-blue/50"
+            style={{ animationDelay: '0ms' }}
+          />
+          <span
+            className="h-1.5 w-1.5 animate-bounce rounded-full bg-grey3 dark:bg-light-blue/50"
+            style={{ animationDelay: '150ms' }}
+          />
+          <span
+            className="h-1.5 w-1.5 animate-bounce rounded-full bg-grey3 dark:bg-light-blue/50"
+            style={{ animationDelay: '300ms' }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}

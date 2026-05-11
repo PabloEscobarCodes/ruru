@@ -1,0 +1,390 @@
+export const DASHBOARD_DATA = {
+  teams: [
+    { name: 'Payments', breach: 12, mttr: 6, crit: 8, high: 24, med: 45, low: 88 },
+    { name: 'Identity', breach: 24, mttr: 11, crit: 14, high: 42, med: 56, low: 110 },
+    { name: 'Platform', breach: 8, mttr: 4, crit: 3, high: 15, med: 30, low: 65 },
+    { name: 'Mobile', breach: 31, mttr: 14, crit: 18, high: 55, med: 62, low: 95 },
+    { name: 'Cloud', breach: 19, mttr: 8, crit: 7, high: 28, med: 44, low: 120 },
+    { name: 'AppSec', breach: 5, mttr: 3, crit: 2, high: 10, med: 25, low: 40 },
+  ],
+  trends: {
+    monthly: {
+      labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+      crit: [10, 12, 14, 11, 15, 18, 20, 18, 16, 19, 22, 25],
+      high: [20, 24, 28, 22, 26, 30, 34, 32, 28, 30, 36, 40],
+      med: [40, 45, 50, 42, 48, 55, 60, 58, 52, 55, 62, 68],
+      low: [60, 65, 70, 62, 68, 75, 82, 80, 72, 75, 85, 92],
+    },
+    quarterly: {
+      labels: ['Q1', 'Q2', 'Q3', 'Q4'],
+      crit: [36, 44, 54, 66],
+      high: [72, 82, 94, 106],
+      med: [135, 145, 170, 185],
+      low: [195, 211, 234, 252],
+    },
+  },
+  coverage: {
+    month: { val: '84%', delta: '▲ 3%', app: '88%', srv: '79%' },
+    quarter: { val: '92%', delta: '▲ 5%', app: '95%', srv: '88%' },
+  },
+  riskAssets: {
+    internet: { crit: 47, high: 128, med: 85, total: 312 },
+    intranet: { crit: 142, high: 215, med: 198, total: 645 },
+  },
+  recurrence: {
+    labels: ['Critical', 'High', 'Medium', 'Low'],
+    rates: [12.4, 18.7, 34.2, 45.8],
+  },
+  aging: {
+    labels: ['0-15d', '16-30d', '31-60d', '>60d'],
+    crit: [45, 30, 25, 20],
+    high: [80, 65, 50, 40],
+    med: [120, 100, 80, 60],
+  },
+  testType: {
+    labels: ['SAST', 'DAST', 'SCA', 'Cloud', 'PenTest', 'VA'],
+    crit: [18, 22, 14, 45, 28, 15],
+    high: [32, 45, 28, 62, 40, 22],
+  },
+  exposure: {
+    labels: ['M1', 'M2', 'M3', 'M4', 'M5', 'M6'],
+    open: [65, 80, 72, 90, 85, 110],
+    closed: [55, 75, 70, 82, 88, 105],
+  },
+};
+
+export const SEVERITY_COLORS = {
+  critical: 'rgb(253, 52, 156)',   // --color-pink
+  high: 'rgb(114, 19, 234)',       // --color-purple
+  medium: 'rgb(30, 73, 226)',      // --color-cobalt-blue
+  low: 'rgb(0, 184, 245)',         // --color-pacific-blue
+  info: 'rgb(99, 235, 218)',       // --color-light-green
+  brand: 'rgb(0, 51, 141)',        // --color-abc-default
+  slaBreach: 'rgb(171, 13, 130)',  // --color-dark-pink
+};
+
+/**
+ * Color palette for transposed datasets — when user picks "Series" as the
+ * X-axis dimension, the original labels (months, teams, etc.) become the
+ * datasets and need their own colors.
+ */
+export const PALETTE = [
+  SEVERITY_COLORS.critical,
+  SEVERITY_COLORS.high,
+  SEVERITY_COLORS.medium,
+  SEVERITY_COLORS.low,
+  SEVERITY_COLORS.brand,
+  'rgb(38, 153, 36)',   // traffic-green
+  'rgb(241, 196, 77)',  // traffic-yellow
+  'rgb(99, 235, 218)',  // light-green
+  'rgb(180, 151, 255)', // light-purple
+  'rgb(255, 163, 218)', // light-pink
+  'rgb(118, 210, 255)', // light-blue
+  'rgb(171, 13, 130)',  // dark-pink
+];
+
+// ---- Chart builder data sources ----
+export type DatasetKey =
+  | 'teams.breach'
+  | 'teams.mttr'
+  | 'teams.crit'
+  | 'teams.high'
+  | 'teams.med'
+  | 'teams.low'
+  | 'trends.crit'
+  | 'trends.high'
+  | 'trends.med'
+  | 'trends.low'
+  | 'aging.crit'
+  | 'aging.high'
+  | 'aging.med'
+  | 'testType.crit'
+  | 'testType.high'
+  | 'exposure.open'
+  | 'exposure.closed';
+
+export type DataSourceKey = 'teams' | 'trends' | 'aging' | 'testType' | 'exposure';
+
+export interface DataSourceDef {
+  name: string;
+  /** Categorical labels — these are the default X-axis values. */
+  labels: string[];
+  /** Friendly axis name when X-axis = labels (e.g., "Team Names", "Months"). */
+  labelAxisName: string;
+  /** Friendly axis name when X-axis = series (transposed, e.g., "Metrics"). */
+  seriesAxisName: string;
+  series: Array<{ key: DatasetKey; label: string; color: string; values: number[] }>;
+}
+
+export const DATA_SOURCES: Record<DataSourceKey, DataSourceDef> = {
+  teams: {
+    name: 'Teams',
+    labels: DASHBOARD_DATA.teams.map((t) => t.name),
+    labelAxisName: 'Team Names',
+    seriesAxisName: 'Metrics',
+    series: [
+      { key: 'teams.breach', label: 'Breach %', color: SEVERITY_COLORS.slaBreach, values: DASHBOARD_DATA.teams.map((t) => t.breach) },
+      { key: 'teams.mttr', label: 'MTTR (days)', color: SEVERITY_COLORS.brand, values: DASHBOARD_DATA.teams.map((t) => t.mttr) },
+      { key: 'teams.crit', label: 'Critical', color: SEVERITY_COLORS.critical, values: DASHBOARD_DATA.teams.map((t) => t.crit) },
+      { key: 'teams.high', label: 'High', color: SEVERITY_COLORS.high, values: DASHBOARD_DATA.teams.map((t) => t.high) },
+      { key: 'teams.med', label: 'Medium', color: SEVERITY_COLORS.medium, values: DASHBOARD_DATA.teams.map((t) => t.med) },
+      { key: 'teams.low', label: 'Low', color: SEVERITY_COLORS.low, values: DASHBOARD_DATA.teams.map((t) => t.low) },
+    ],
+  },
+  trends: {
+    name: 'Discovery Trends (Monthly)',
+    labels: DASHBOARD_DATA.trends.monthly.labels,
+    labelAxisName: 'Months',
+    seriesAxisName: 'Severities',
+    series: [
+      { key: 'trends.crit', label: 'Critical', color: SEVERITY_COLORS.critical, values: DASHBOARD_DATA.trends.monthly.crit },
+      { key: 'trends.high', label: 'High', color: SEVERITY_COLORS.high, values: DASHBOARD_DATA.trends.monthly.high },
+      { key: 'trends.med', label: 'Medium', color: SEVERITY_COLORS.medium, values: DASHBOARD_DATA.trends.monthly.med },
+      { key: 'trends.low', label: 'Low', color: SEVERITY_COLORS.low, values: DASHBOARD_DATA.trends.monthly.low },
+    ],
+  },
+  aging: {
+    name: 'Aging Buckets',
+    labels: DASHBOARD_DATA.aging.labels,
+    labelAxisName: 'Age Buckets',
+    seriesAxisName: 'Severities',
+    series: [
+      { key: 'aging.crit', label: 'Critical', color: SEVERITY_COLORS.critical, values: DASHBOARD_DATA.aging.crit },
+      { key: 'aging.high', label: 'High', color: SEVERITY_COLORS.high, values: DASHBOARD_DATA.aging.high },
+      { key: 'aging.med', label: 'Medium', color: SEVERITY_COLORS.medium, values: DASHBOARD_DATA.aging.med },
+    ],
+  },
+  testType: {
+    name: 'Findings by Origin',
+    labels: DASHBOARD_DATA.testType.labels,
+    labelAxisName: 'Test Types',
+    seriesAxisName: 'Severities',
+    series: [
+      { key: 'testType.crit', label: 'Critical', color: SEVERITY_COLORS.critical, values: DASHBOARD_DATA.testType.crit },
+      { key: 'testType.high', label: 'High', color: SEVERITY_COLORS.high, values: DASHBOARD_DATA.testType.high },
+    ],
+  },
+  exposure: {
+    name: 'Exposure (Open vs Closed)',
+    labels: DASHBOARD_DATA.exposure.labels,
+    labelAxisName: 'Months',
+    seriesAxisName: 'Status',
+    series: [
+      { key: 'exposure.open', label: 'Open', color: SEVERITY_COLORS.critical, values: DASHBOARD_DATA.exposure.open },
+      { key: 'exposure.closed', label: 'Closed', color: SEVERITY_COLORS.info, values: DASHBOARD_DATA.exposure.closed },
+    ],
+  },
+};
+
+/** Chart kinds — horizontal-bar removed (use swapAxes on a bar chart instead). */
+export type ChartKind = 'bar' | 'stacked-bar' | 'line' | 'pie' | 'doughnut';
+
+/** What dimension goes on the X-axis (or becomes the slices for pie/doughnut). */
+export type XAxisField = 'labels' | 'series';
+
+export interface CustomChartConfig {
+  id: string;
+  title: string;
+  source: DataSourceKey;
+  chartKind: ChartKind;
+  selectedSeries: DatasetKey[];
+  /** 'labels' = source labels on X (default). 'series' = transposed (selected series labels on X). */
+  xAxisField: XAxisField;
+  /** Flip chart orientation (vertical ↔ horizontal). Ignored for pie/doughnut. */
+  swapAxes: boolean;
+}
+
+/* ============================================================================
+ * CHATBOT MOCK DATA — query → insight + chart config
+ * ========================================================================== */
+
+export interface MockChartTemplate {
+  title: string;
+  source: DataSourceKey;
+  chartKind: ChartKind;
+  selectedSeries: DatasetKey[];
+  xAxisField: XAxisField;
+  swapAxes: boolean;
+}
+
+export interface MockQuery {
+  /** Lowercase keywords. Match score = how many keywords appear in the query. */
+  keywords: string[];
+  insight: string;
+  chart: MockChartTemplate;
+}
+
+export const STARTER_PROMPTS: string[] = [
+  'Which team has the most critical issues?',
+  'Show me the trend of high severity over time',
+  'How old are our vulnerabilities?',
+  'Who has the worst SLA breach rate?',
+  'Compare open vs closed velocity',
+];
+
+export const MOCK_QUERIES: MockQuery[] = [
+  {
+    keywords: ['critical', 'team', 'most', 'highest', 'worst', 'severe'],
+    insight:
+      'Mobile leads with 18 critical issues, followed by Identity (14) and Payments (8). AppSec has the lowest exposure at just 2 critical findings.',
+    chart: {
+      title: 'Critical Issues by Team',
+      source: 'teams',
+      chartKind: 'bar',
+      selectedSeries: ['teams.crit'],
+      xAxisField: 'labels',
+      swapAxes: false,
+    },
+  },
+  {
+    keywords: ['quarter', 'quarterly', 'q1', 'q2', 'q3', 'q4', 'critical and high', 'trend'],
+    insight:
+      'Critical findings climbed 83% from Q1 (36) to Q4 (66). Highs grew from 72 to 106. The trajectory is steep — Q3 alone added 10 criticals over Q2.',
+    chart: {
+      title: 'Critical & High Quarterly Trend',
+      source: 'trends',
+      chartKind: 'line',
+      selectedSeries: ['trends.crit', 'trends.high'],
+      xAxisField: 'labels',
+      swapAxes: false,
+    },
+  },
+  {
+    keywords: ['trend', 'time', 'monthly', 'critical', 'severity', 'over', 'history', 'months'],
+    insight:
+      'Critical-severity findings have grown steadily — from 20 in January to 40 in December (a 100% YoY increase). The sharpest jumps happened in Q3 and Q4.',
+    chart: {
+      title: 'Critical Severity Trend (Monthly)',
+      source: 'trends',
+      chartKind: 'line',
+      selectedSeries: ['trends.crit'],
+      xAxisField: 'labels',
+      swapAxes: false,
+    },
+  },
+  {
+    keywords: ['trend', 'time', 'monthly', 'high', 'severity', 'over', 'history', 'months'],
+    insight:
+      'High-severity findings have grown steadily — from 20 in January to 40 in December (a 100% YoY increase). The sharpest jumps happened in Q3 and Q4.',
+    chart: {
+      title: 'High Severity Trend (Monthly)',
+      source: 'trends',
+      chartKind: 'line',
+      selectedSeries: ['trends.high'],
+      xAxisField: 'labels',
+      swapAxes: false,
+    },
+  },
+  {
+    keywords: ['old', 'age', 'aging', 'days', 'vulnerabilities', 'profile', 'how old'],
+    insight:
+      '60+ day vulnerabilities account for 120 issues across severities. Mediums dominate the long-tail (60 over 60 days), and 20 critical issues have been open more than 60 days — that is the urgent bucket.',
+    chart: {
+      title: 'Vulnerability Age Profile',
+      source: 'aging',
+      chartKind: 'stacked-bar',
+      selectedSeries: ['aging.crit', 'aging.high', 'aging.med'],
+      xAxisField: 'labels',
+      swapAxes: true,
+    },
+  },
+  {
+    keywords: ['sla', 'breach', 'breaching', 'rate', 'percentage', 'percent'],
+    insight:
+      'Mobile breaches SLA on 31% of issues, the highest in the org. Identity (24%) and Cloud Infra (19%) follow. AppSec is the gold standard at just 5%.',
+    chart: {
+      title: 'SLA Breach Rate by Team',
+      source: 'teams',
+      chartKind: 'bar',
+      selectedSeries: ['teams.breach'],
+      xAxisField: 'labels',
+      swapAxes: true,
+    },
+  },
+  {
+    keywords: ['open', 'closed', 'velocity', 'remediation', 'closing', 'progress'],
+    insight:
+      'Closure velocity is keeping pace with opens for the first three months (M1–M3) but starts to lag in M4–M6. By M6, 110 issues opened vs only 105 closed — the backlog is creeping up.',
+    chart: {
+      title: 'Open vs Closed Velocity',
+      source: 'exposure',
+      chartKind: 'line',
+      selectedSeries: ['exposure.open', 'exposure.closed'],
+      xAxisField: 'labels',
+      swapAxes: false,
+    },
+  },
+  {
+    keywords: ['mttr', 'fix', 'resolve', 'time to', 'remediate', 'speed', 'days to fix'],
+    insight:
+      'Mobile takes the longest to remediate (14 days average), more than 4× AppSec\'s 3-day pace. Identity (11 days) and Cloud Infra (8 days) sit in the middle of the pack.',
+    chart: {
+      title: 'MTTR by Team',
+      source: 'teams',
+      chartKind: 'bar',
+      selectedSeries: ['teams.mttr'],
+      xAxisField: 'labels',
+      swapAxes: true,
+    },
+  },
+  {
+    keywords: ['scan', 'scanner', 'tool', 'origin', 'sast', 'dast', 'cloud', 'pentest', 'where', 'source'],
+    insight:
+      'Cloud scans surface the most issues by far — 45 critical and 62 high. PenTests follow with 28 critical findings. SCA has the lowest critical yield at 14, suggesting strong dependency hygiene.',
+    chart: {
+      title: 'Findings by Scan Origin',
+      source: 'testType',
+      chartKind: 'stacked-bar',
+      selectedSeries: ['testType.crit', 'testType.high'],
+      xAxisField: 'labels',
+      swapAxes: false,
+    },
+  },
+  {
+    keywords: ['breakdown', 'distribution', 'split', 'share', 'pie', 'composition'],
+    insight:
+      'Across the team, Mobile carries 34% of all critical findings — the largest single share. Identity is next at 27%, with Cloud Infra and Payments together at 28%.',
+    chart: {
+      title: 'Critical Issue Distribution by Team',
+      source: 'teams',
+      chartKind: 'doughnut',
+      selectedSeries: ['teams.crit'],
+      xAxisField: 'labels',
+      swapAxes: false,
+    },
+  },
+  {
+    keywords: ['compare', 'comparison', 'vs', 'versus', 'breach', 'mttr'],
+    insight:
+      'Teams with high SLA breach rates also have long MTTR — Mobile breaches 31% with a 14-day MTTR, Identity 24% with 11 days. The correlation is striking: fix velocity drives SLA outcomes.',
+    chart: {
+      title: 'Breach % vs MTTR',
+      source: 'teams',
+      chartKind: 'bar',
+      selectedSeries: ['teams.breach', 'teams.mttr'],
+      xAxisField: 'labels',
+      swapAxes: false,
+    },
+  }
+];
+
+/**
+ * Best-match search — returns the highest-scoring mock query.
+ * Returns null if no keywords match (caller should show fallback).
+ */
+export function findMockMatch(query: string): MockQuery | null {
+  const q = query.toLowerCase();
+  let best: { query: MockQuery; score: number } | null = null;
+
+  for (const m of MOCK_QUERIES) {
+    let score = 0;
+    for (const kw of m.keywords) {
+      if (q.includes(kw)) score++;
+    }
+    if (score > 0 && (!best || score > best.score)) {
+      best = { query: m, score };
+    }
+  }
+
+  return best?.query ?? null;
+}

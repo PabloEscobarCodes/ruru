@@ -1,6 +1,127 @@
-Provide a stacked bar chart showing the distribution of findings by Origin (SAST, DAST, Cloud, etc.) for our Critical and High-severity issues
+class ServeFilesAPIView(APIView):
+    def get(self, request, mainfolder, id, file_name, otherfoldername=None):
+        # user, user_type, decoded = get_user(request)
+        # if isinstance(user, Response):
+        #     return user
 
-Show me the discovery trend for all severities across the fiscal year from April through to March."
+        # if not user:
+        #     return Response({'status': False, 'message': "Unauthorized access."}, status=403)
 
-Which team currently has the highest SLA Breach Rate, and how does their Remediation MTTR compare to the organization’s average for Critical findings?
-Mobile Team
+        file_location = None
+
+        if mainfolder == 'requestor':
+            file_location = os.path.join(settings.MEDIA_ROOT, 'requestor', id, file_name)
+            print(file_location)
+
+        if mainfolder == 'assessment_documents':
+            file_location = os.path.join(settings.MEDIA_ROOT, 'assessment_documents', id, file_name)
+            print(file_location)
+
+        elif mainfolder == 'result_storage':
+            if otherfoldername == 'risk_accept_doc':
+                file_location = os.path.join(settings.MEDIA_ROOT, 'result_storage', otherfoldername, id, file_name)
+                print(file_location)
+            elif otherfoldername == 'architecture_img':
+                file_location = os.path.join(settings.MEDIA_ROOT, 'result_storage', otherfoldername, file_name)
+            elif otherfoldername == 'sar_pdf':
+                file_location = os.path.join(settings.MEDIA_ROOT, 'result_storage', otherfoldername, id, file_name)
+            elif otherfoldername == 'findings_file':
+                id_parts = id.split('_')
+                if len(id_parts) >= 2:
+                    file_location = os.path.join(settings.MEDIA_ROOT, 'result_storage', id_parts[0], id_parts[1], file_name)
+            elif otherfoldername == 'testing_doc':
+                file_location = os.path.join(settings.MEDIA_ROOT, 'result_storage', id, 'allControlsDoc', file_name)
+            elif otherfoldername == 'other_file':
+                file_location = os.path.join(settings.MEDIA_ROOT, 'result_storage', id, file_name)
+
+        elif mainfolder == 'templates':
+            file_location = os.path.join(settings.MEDIA_ROOT, 'templates', 'KPMGi', file_name)
+
+        elif mainfolder == 'logfile':
+            file_location = os.path.join(settings.MEDIA_ROOT, 'templates', 'logfile', file_name)
+
+        elif mainfolder == 'artifacts':
+            if otherfoldername and '||' in otherfoldername:
+                file_name = otherfoldername
+            file_name = file_name.replace('||', '/').replace('public/', '')
+            file_location = os.path.join(settings.MEDIA_ROOT, file_name)
+            file_name = os.path.basename(file_location)
+
+        print(file_location)
+        if file_location and os.path.exists(file_location):
+            content_type, _ = mimetypes.guess_type(file_location)
+            return FileResponse(
+                open(file_location, "rb"),
+                # as_attachment=True,
+                filename=file_name,
+                content_type=content_type,
+            )
+        else:
+            return JsonResponse({
+                'status': False,
+                'message': 'File Not Found',
+                'errors': []
+            }, status=404)
+
+
+
+Request URL
+http://localhost:8000/storage/serve-files/result_storage/123/177988203247_architecture_image.png/architecture_img/
+Request Method
+GET
+Status Code
+200 OK
+Remote Address
+127.0.0.1:8000
+Referrer Policy
+strict-origin-when-cross-origin
+allow
+GET, HEAD, OPTIONS
+content-disposition
+inline; filename="177988203247_architecture_image.png"
+content-length
+336868
+content-type
+image/png
+cross-origin-opener-policy
+same-origin
+date
+Wed, 27 May 2026 11:40:32 GMT
+referrer-policy
+same-origin
+server
+WSGIServer/0.2 CPython/3.13.3
+vary
+Accept, origin
+x-content-type-options
+nosniff
+accept
+image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8
+accept-encoding
+gzip, deflate, br, zstd
+accept-language
+en-US,en;q=0.9
+connection
+keep-alive
+cookie
+__next_hmr_refresh_hash__=8781
+dnt
+1
+host
+localhost:8000
+referer
+http://localhost:3000/
+sec-ch-ua
+"Chromium";v="148", "Microsoft Edge";v="148", "Not/A)Brand";v="99"
+sec-ch-ua-mobile
+?0
+sec-ch-ua-platform
+"Windows"
+sec-fetch-dest
+image
+sec-fetch-mode
+no-cors
+sec-fetch-site
+same-site
+user-agent
+Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0

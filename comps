@@ -1,1713 +1,1459 @@
-'use client';
+import React, { useEffect, useState } from "react";
+import { useHistory,useParams,Link } from "react-router-dom";
+import { Button, Card, CardBody, Col, Container, Input, Label, Modal, ModalBody, ModalFooter, ModalHeader, Row } from "reactstrap";
+import BreadCrumb from "../../../Components/Common/BreadCrumb";
+import AsyncSelect from "react-select/async";
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Chart as ChartJS, registerables } from 'chart.js';
-import { Bar, Line, Pie, Doughnut, Chart } from 'react-chartjs-2';
-import ChartDataLabels from 'chartjs-plugin-datalabels';
+import * as html2canvas from "html2canvas"
+import {jsPDF} from "jspdf";
 import {
-  DASHBOARD_DATA,
-  SEVERITY_COLORS,
-  DATA_SOURCES,
-  PALETTE,
-  STARTER_PROMPTS,
-  findMockMatch,
-  type DataSourceKey,
-  type DatasetKey,
-  type ChartKind,
-  type XAxisField,
-  type CustomChartConfig,
-  type MockChartTemplate,
-} from './dashboard-data';
-import { useIsDark } from './use-is-dark';
+    getSarData,
+    postUploadArcImage,
+    getRequestData,
+    minMaxLength,
+    notify,
+    postSarViewEdit,
+    downloadPdfFile,
+} from "../../../helpers/backend_helper";
+import Select from "react-select";
+import Loader from "../../../Components/Common/Loader";
+import config from "../../../config";
+import { format } from "date-fns";
+import './view-edit-sar.css';
+import {encode as base64_encode} from 'base-64';
+import DOMPurify from 'dompurify';
+import IdleTimerContainer from "../../../Components/Common/IdleTimerContainer";
 
-ChartJS.register(...registerables, ChartDataLabels);
+const ViewEditSar = () => {
+    const MAX_COUNT = 5;
+    const printRef = React.useRef();
+    const history = useHistory()
+    const { sgpId } = useParams();
+    const { assessmentId } = useParams();
+    const [requestCommonDetail, setRequestCommonDetail] = useState();
+    const [isLoading, setIsLoading] = useState(false);
+    const [isUpdateToExistingSolution, setIsUpdateToExistingSolution] = useState(false);
+    const [infoModal, setInfoModal] = useState(false);
+    const [alertModal, setAlertModal] = useState(false);
+    const [apiData, setApiData] = useState([]);
+    const [allData, setAllData] = useState();
+    const [sub111text, set111Text] = useState('');
+    const [addAendumText, setAddAendumText] = useState('');
+    const header111DefaultData = "<div style='max-width: 83% !important;margin-left: auto;margin-right: auto;padding-top: 10px;'><h4 class='text-primary'>1.1.1 &nbsp&nbsp Unresolved High and Medium Risk Items</h4></div><div style='max-width: 83% !important;margin-left: auto;margin-right: auto;'><div><h5>The POA&M, section 6, covers the detail these unresolved risks, as well as the low and informational risk items not stated within this section.</h5></div></div><div class='header_1_1_1_subsection'><div><div style='max-width: 83% !important;margin-left: auto;margin-right: auto;padding-top: 10px;'><h4 class='text-primary'>1.1.1.1 &nbsp&nbsp High or Medium Risk Item 1</h4></div><div style='max-width: 83% !important;margin-left: auto;margin-right: auto;'><div><h5>[Statement about the risk, remediation data and residual risk.]</h5></div><div><h5>[If no high or medium findings, select the Delete section 1_1_1 text button at the bottom of this page]</h5></div></div></div></div>"  
 
-/* ============================================================================
- * SHARED HOOKS
- * ========================================================================== */
+    function toggleInfoModal() {
+        setInfoModal(!infoModal);
+    }
+    function toggleAlertModal() {
+        setAlertModal(!alertModal);
+    }
 
-const useChartTheme = () => {
-  const isDark = useIsDark();
-  return {
-    isDark,
-    text: isDark ? '#FFFFFF' : 'rgb(12, 35, 60)',
-    grid: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(12,35,60,0.08)',
-    muted: isDark ? 'rgba(172,234,255,0.6)' : 'rgb(102,102,102)',
-  };
+    const[addendumHeader,setAddendumHeader] = useState('2');
+    const[header111,setHeader111] = useState('2');
+    useEffect(() => {
+        setIsLoading(true)
+        getSarData(assessmentId).then((result) => {
+
+            let sarData = {};
+            Object.keys(result.data.data.editSarTemplate).map((key, index) => {
+                sarData[key] = htmlPurify(result.data.data.editSarTemplate[key]);
+            })
+
+            setApiData(sarData);
+            setAllData(result.data.data);
+            set111Text(result.data.data.sub_1_1_1_btn_val);
+            setAddAendumText(result.data.data.sub_7_btn_val)
+            setAddendumHeader(result.data.data.isAddendumSec)
+            setHeader111(result.data.data.isHeader111Sec)
+            document.addEventListener("click", (e) => {
+                if (e.target.classList.contains("addTestingOverview_7")) {
+                    addTestingOverview_7(e)
+                }
+            }, true);
+            setIsLoading(false)
+        });
+    }, [assessmentId]);
+
+    const addendumDefaultData = `<div><div class="col-xs-12 col-md-12 col-lg-12 p-t-2"><div style="max-width: 83% !important;margin-left: auto;margin-right: auto;padding-top: 30px;"><h2 class="text-primary">7 &nbsp&nbsp Addendum</h2></div></div></div><div class="addendum_subsection"><div class="col-xs-12 col-md-12 col-lg-12 p-t-2"><div style="max-width: 83% !important;margin-left: auto;margin-right: auto;padding-top: 10px;"><h3 class="text-primary">7.1 &nbsp&nbsp Month DD, YYYY</h3></div><div style="max-width: 83% !important;margin-left: auto;margin-right: auto;"><div><h5>[Overview text to summarize changes made and additional testing completed.] </h5></div></div><div style="max-width: 83% !important;margin-left: auto;margin-right: auto;padding-top: 10px;"><button style="float: right;" type="button" class="btn btn-custom-primary addTestingOverview_7"> + Add Testing Overview</button><h4 class="text-primary">7.1.1 &nbsp&nbsp Testing Overview</h4></div><div style="max-width: 83% !important;margin-left: auto;margin-right: auto;"><table class="table table-bordered"><thead><tr><th style="color:white;" >Event (or version)</th><th style="color:white;" >Test Date</th><th style="color:white;" >Outcome</th></tr></thead><tbody><tr><td rowspan="2">Penetration Test - <span>${allData?.solutionName}</span> environment</td><td rowspan="2"><span>${allData?.goLiveDate}</span></td><td>Result:</td></tr><tr><td>Scope:</td></tr><tr><td rowspan="2">Final Static Code Analysis - <span>${allData?.solutionName}</span> environment</td><td rowspan="2"><span>${allData?.goLiveDate}</span></td><td>Result:</td></tr><tr><td>Scope:</td></tr></tbody></table></div></div></div>`;
+
+    const addendumDefaultSubsectionData = `<div style="max-width: 83% !important;margin-left: auto;margin-right: auto;padding-top: 10px;"><h3 class="text-primary">7.1 &nbsp&nbsp Month DD, YYYY</h3></div><div style="max-width: 83% !important;margin-left: auto;margin-right: auto;"><div><h5>[Overview text to summarize changes made and additional testing completed.] </h5></div></div><div style="max-width: 83% !important;margin-left: auto;margin-right: auto;padding-top: 10px;"><button style="display:block; float: right;" type="button" class="btn btn-custom-primary addTestingOverview_7"> + Add Testing Overview</button><h4 class="text-primary">7.1.1 &nbsp&nbsp Testing Overview</h4></div><div style="max-width: 83% !important;margin-left: auto;margin-right: auto;"><table class="table table-bordered"><thead><tr><th style="color:white;" >Event (or version)</th><th style="color:white;" >Test Date</th><th style="color:white;" >Outcome</th></tr></thead><tbody><tr><td rowspan="2">Penetration Test - <span>${allData?.solutionName}</span> environment</td><td rowspan="2"><span>${allData?.goLiveDate}</span></td><td>Result:</td></tr><tr><td>Scope:</td></tr><tr><td rowspan="2">Final Static Code Analysis - <span>${allData?.solutionName}</span> environment</td><td rowspan="2"><span>${allData?.goLiveDate}</span></td><td>Result:</td></tr><tr><td>Scope:</td></tr></tbody></table></div>`;
+
+    let initialValues = {
+        sarCloneAction: "",
+        igpCloneId: "",
+        sgpId: sgpId,
+    };
+
+    const [form, setForm] = useState(initialValues);
+    const [formErrors, setFormErrors] = useState({});
+
+    const validate = (name, value) => {
+        switch (name) {
+            case "sarCloneAction":
+                if (minMaxLength(value, 1)) {
+                    formErrors[name] = `Please select a option.`;
+                } else {
+                    delete formErrors[name];
+                }
+
+                setFormErrors(formErrors);
+                setForm({ ...form, sarCloneAction: value });
+                break;
+
+            case "igpCloneId":
+                if (minMaxLength(value, 1)) {
+                    toggleAlertModal()
+                    formErrors[name] = `Please search and select.`;
+                } else {
+                    delete formErrors[name];
+                }
+
+                setFormErrors(formErrors);
+                setForm({ ...form, igpCloneId: value });
+                break;
+
+            default:
+                break;
+        }
+    };
+
+    const validateOnSubmit = () => {
+        const newErrors = {};
+        for (let item in form) {
+            validate(item, form[item]);
+        }
+        return newErrors;
+    };
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        validateOnSubmit();
+        if (Object.entries(formErrors || {}).length > 0) {
+            console.log('abc')
+        } else {
+            let formData = new FormData();
+            for (let value in form) {
+                formData.append(value, form[value]);
+            }
+            formData.append("sgpId", sgpId);
+
+            setIsLoading(true)
+        }
+    };
+
+
+    const searchBySgpIdOptions = async (searchTerm = "") => {
+        // searchTerm = "?search=" + searchTerm;
+        searchTerm = "/" + searchTerm;
+        let res = await getRequestData(searchTerm);
+        let { data } = res.data;
+        return data;
+    };
+
+    const handleDownloadPdf = async (e) => {
+        e.preventDefault()
+        const element = printRef.current;
+        const canvas = await html2canvas(element, {
+                scrollX: -window.scrollX,
+                scrollY: -window.scrollY,
+                width: element.clientWidth,
+                height: element.clientHeight,
+                allowTaint: true,
+                useCORS: true
+            });
+        const data = canvas.toDataURL('image/png');
+
+        // var imgWidth = 210; 
+        // var pageHeight = 295;  
+        // var imgHeight = canvas.height * imgWidth / canvas.width;
+        // var heightLeft = imgHeight;
+  
+        // var doc = new jsPDF('p', 'mm');
+        // var position = 0;
+  
+        // doc.addImage(data, 'PNG', 0, position, imgWidth, imgHeight);
+        // heightLeft -= pageHeight;
+  
+        // while (heightLeft >= 0) {
+        //   position = heightLeft - imgHeight;
+        //   doc.addPage();
+        //   doc.addImage(data, 'PNG', 0, position, imgWidth, imgHeight);
+        //   heightLeft -= pageHeight;
+        // }
+        // doc.save('testing-report.pdf');
+
+        const pdf = new jsPDF('1', 'pt', [element.clientWidth, element.clientHeight], true);
+        const imgProperties = pdf.getImageProperties(data);
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight =
+          (imgProperties.height * pdfWidth) / imgProperties.width;
+    
+        pdf.addImage(data, 'PNG', 0, 0, element.clientWidth, element.clientHeight,'FAST');
+        pdf.save('testing-report.pdf');
+
+
+      };
+
+    const penTestOptions = [
+        { value: "Yes", label: "Yes" },
+        { value: "No", label: "No" }
+    ];
+
+    document.title = "VTM :: SAR Template";
+
+    const breadCrumbUrls = [
+        { name: "Home", url: "/dashboard" },
+        { name: "Requestor", url: "/requestor-list" },
+    ];
+
+    const clickHandler = (e) => {
+        // `target` is the element the click was on (the div we hooked or an element
+        // with in it), `currentTarget` is the div we hooked the event on
+        const el = e.target.closest("select");
+        if (el && e.currentTarget.contains(el)) {
+            const elements = document.querySelector("[class='overall_residual_risk']")
+            const elementsFirstPage = document.querySelector("[class='comb_residual_view']")
+
+            if (el.value === '1') {
+                elements.innerHTML = '<div><h4 align="center"><b><span style="color: #00B050;">LOW&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; </span></b></h4></div>';
+                if(elementsFirstPage){
+                    elementsFirstPage.innerHTML = '<b><span style="color: #00B050;">LOW&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; </span></b>';
+                }
+
+            } else if (el.value === '2') {
+                elements.innerHTML = '<div><h4 align="center"><b><span style="color: #FFC000;">MEDIUM&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; </span></b></h4></div>';
+                if(elementsFirstPage){
+                    elementsFirstPage.innerHTML = '<b><span style="color: #FFC000;">MEDIUM&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; </span></b>';
+                }
+
+            } else if (el.value === '3') {
+                elements.innerHTML = '<div><h4 align="center"><b><span style="color: #FF0000;">HIGH&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; </span></b></h4></div>';
+                if(elementsFirstPage){
+                    elementsFirstPage.innerHTML = '<b><span style="color: #FF0000;">HIGH&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; </span></b>';
+                }
+
+            }
+
+        }
+    }
+
+    const [uploadedFiles, setUploadedFiles] = useState([]);
+    const [fileLimit, setFileLimit] = useState(false);
+    const [fileName, setFileName] = useState([]);
+    const [imageUrl, setImageUrl] = useState('');
+    const handleUploadFiles = (files) => {
+
+        const uploaded = [];
+
+        files.some((file) => {
+            if (uploaded.findIndex((f) => f.name === file.name) === -1) {
+                uploaded.push(file);
+            }
+        });
+
+        setUploadedFiles(uploaded);
+
+        let formData = new FormData();
+        if (uploaded.length) {
+            for (let i = 0; i < uploaded.length; i++) {
+
+                let fileCheckName = uploaded[i].name;
+                let fileCheckType = uploaded[i].type;
+                var allowedFileType = ['image/png', 'image/jpeg', 'image/jpg'];
+                var allowedFileName = ['png', 'jpeg', 'jpg'];
+
+                if(allowedFileType.indexOf(fileCheckType) > -1 && allowedFileName.indexOf(fileCheckName.split('.').pop().toLowerCase()) > -1 ) {
+                    formData.append("architectureImage[]", uploaded[i]);
+                } else {
+                    notify("Only JPEG, PNG, and JPG images are allowed.")
+                    return false;                
+                }
+            }
+        }
+        formData.append("assessmentId",assessmentId)
+
+        setIsLoading(true);
+
+        postUploadArcImage(formData).then((result) => {
+
+            if(result?.errors) {
+                setIsLoading(false);
+                notify("Only JPEG, PNG, and JPG images are allowed.")
+            } else {
+                setIsLoading(false);
+                let fileName = result.data.data.fileName.split(";")
+                let filePath = result.data.data.imgUrl
+                let abc = document.getElementById("header_2_1_img_show").innerHTML;
+                fileName.map((data1,index) => {
+                    abc += '<img class="architecture_img" src="' + config.BASE_LOCATION_IMAGE + filePath + data1 + '" style="width:100%; display: block; margin-left: auto; margin-right: auto;" /><br>';
+                })
+                document.getElementById("header_2_1_img_show").innerHTML = abc;
+                notify(result.data.message,'success');
+            }
+        });
+    };
+
+    useEffect(() => {
+        if(allData?.isContentEditable){
+            const isContentEditable = allData?.isContentEditable;
+            if (isContentEditable === 'true') {
+                const dropdown = "<select class='form-control header_security_status'><option value='0'>Select Status</option><option value='1' style='background-color:#A8D08D'>Implemented</option><option value='2' style='background-color:#FFE599'>Partially Implemented</option><option value='3' style='background-color:#F4B083'>Gap</option><option value='4' style='background-color:#D0CECE'>Not Assessed</option><option value='5' style='background-color:#FFFFFF'>Not Applicable</option></select>"
+
+                let securityStatus = document.querySelectorAll('.header_3_4_security_status');
+                securityStatus.forEach(data => {
+                     data.innerHTML = dropdown
+                });
+
+                const residualRiskOverall = '<select class="form-control"><option style="color: #00B050;" value="1"><b>LOW</b></option><option style="color: #FFC000;" value="2"><b>MEDIUM</b></option><option style="color: #FF0000;" value="3"><b>HIGH</b></option></select>';
+                let riskSumaryDropdown = document.querySelectorAll('.overall_residual_edit')
+                riskSumaryDropdown.forEach(data => {
+                    data.innerHTML = residualRiskOverall
+                });
+
+                const residualRiskFirstPage = '<select class="form-control"><option style="color: #00B050;" value="1"><b>LOW</b></option><option style="color: #FFC000;" value="2"><b>MEDIUM</b></option><option style="color: #FF0000;" value="3"><b>HIGH</b></option></select>';
+                let riskSumaryDropdownFirstPage = document.querySelectorAll('.comb_residual_edit')
+                riskSumaryDropdownFirstPage.forEach(data => {
+                    data.innerHTML = residualRiskFirstPage
+                });
+
+                let el2 = document.getElementById("header_2_1_img");
+                if(el2){
+                    document.getElementById("header_2_1_img").innerHTML = "<input type='file' multiple/>";
+                }
+
+                let el3 = document.getElementsByClassName("addTestingOverview_7");
+                if(el3[0]) {
+                    document.getElementsByClassName('addTestingOverview_7')[0].style.display = 'block';
+                    let addTestingOverview_7 = document.querySelectorAll('.addTestingOverview_7');
+                    addTestingOverview_7.forEach(data => {
+                         data.innerHTML = ' + Add Testing Overview '
+                    });
+                }
+            }
+        }
+
+
+        let el2 = document.getElementById("header_2_1_img");
+        if(el2){
+            document.getElementById("header_2_1_img").onchange = function (e) {
+                const chosenFiles = Array.prototype.slice.call(e.target.files);
+                handleUploadFiles(chosenFiles);
+            }
+        }
+
+        const elmns = document.querySelectorAll('.header_3_4_security_status');
+        Array.from(elmns).forEach(function (element) {
+            element.addEventListener('change', function (e) {
+                let txt = e.target.options[e.target.selectedIndex].text;
+                let status_val = e.target.value;
+
+                let pre = e.target
+                let td_pre = e.target.closest("td")
+
+                pre.text = txt
+                if (status_val === '1') {
+                    td_pre.setAttribute("style", "background-color:#A8D08D")
+                    td_pre.getElementsByTagName("div")[0].textContent = pre.text
+                } else if (status_val === '2') {
+                    td_pre.setAttribute("style", "background-color:#FFE599")
+                    td_pre.getElementsByTagName("div")[0].textContent = pre.text
+                } else if (status_val === '3') {
+                    td_pre.setAttribute("style", "background-color:#F4B083")
+                    td_pre.getElementsByTagName("div")[0].textContent = pre.text
+                } else if (status_val === '4') {
+                    td_pre.setAttribute("style", "background-color:#D0CECE")
+                    td_pre.getElementsByTagName("div")[0].textContent = pre.text
+                } else if (status_val === '5') {
+                    td_pre.setAttribute("style", "background-color:#FFFFFF")
+                    td_pre.getElementsByTagName("div")[0].textContent = pre.text
+                } else {
+                    pre.text = '-'
+                    td_pre.setAttribute("style", "background-color:#FFFFFF")
+                    td_pre.getElementsByTagName("div")[0].textContent = pre.text
+                }
+            });
+        });
+
+        // let el = document.getElementsByName("kpmg")[0];
+        // if(el){
+        //     document.getElementsByName("kpmg")[0].addEventListener('change', function (e) {
+        //         if (e.target.checked === true) {
+        //             e.target.setAttribute("checked", "checked");
+        //         } else {
+        //             e.target.removeAttribute("checked");
+        //         }
+        //     });
+        //     document.getElementsByName("kpmg")[1].addEventListener('change', function (e) {
+        //         if (e.target.checked === true) {
+        //             e.target.setAttribute("checked", "checked");
+        //         } else {
+        //             e.target.removeAttribute("checked");
+        //         }
+        //     });
+        //     document.getElementsByName("kpmg")[2].addEventListener('change', function (e) {
+        //         if (e.target.checked === true) {
+        //             e.target.setAttribute("checked", "checked");
+        //         } else {
+        //             e.target.removeAttribute("checked");
+        //         }
+        //     });
+        // }   
+
+        // Focus on edit
+        document.addEventListener("focus", (e) => {
+            let isContentEditable = e.target.getAttribute('contenteditable');
+            if(isContentEditable === 'true'){
+                e.target.setAttribute("style", "outline: 1px solid black")
+            }
+          }, true);
+
+        document.addEventListener("blur", (e) => {
+        let isContentEditable = e.target.getAttribute('contenteditable');
+        if(isContentEditable === 'true'){
+            e.target.setAttribute("style", "outline: 0px solid transparent")
+        }
+        }, true);
+
+        // document.addEventListener("paste", (e) => {
+        //     let isContentEditable = e.target.getAttribute('contenteditable');
+        //     if(isContentEditable === 'true'){
+        //         e.target.bind("paste");
+        //     }
+        //     }, true);
+
+        // let el1 = document.getElementsByName("business_cri")[0];
+        // if(el1){
+        //     document.getElementsByName("business_cri")[0].addEventListener('change', function (e) {
+        //         if (e.target.checked === true) {
+        //             e.target.setAttribute("checked", "checked");
+        //         } else {
+        //             e.target.removeAttribute("checked");
+        //         }
+        //     });
+        //     document.getElementsByName("business_cri")[1].addEventListener('change', function (e) {
+        //         if (e.target.checked === true) {
+        //             e.target.setAttribute("checked", "checked");
+        //         } else {
+        //             e.target.removeAttribute("checked");
+        //         }
+        //     });
+        //     document.getElementsByName("business_cri")[2].addEventListener('change', function (e) {
+        //         if (e.target.checked === true) {
+        //             e.target.setAttribute("checked", "checked");
+        //         } else {
+        //             e.target.removeAttribute("checked");
+        //         }
+        //     });
+        //     document.getElementsByName("business_cri")[3].addEventListener('change', function (e) {
+        //         if (e.target.checked === true) {
+        //             e.target.setAttribute("checked", "checked");
+        //         } else {
+        //             e.target.removeAttribute("checked");
+        //         }
+        //     });
+        //     document.getElementsByName("business_cri")[4].addEventListener('change', function (e) {
+        //         if (e.target.checked === true) {
+        //             e.target.setAttribute("checked", "checked");
+        //         } else {
+        //             e.target.removeAttribute("checked");
+        //         }
+        //     });
+        // }
+
+        const elements1 = document.querySelectorAll('input[name="kpmg"]');
+        Array.from(elements1).forEach(function (element) {
+            element.addEventListener('change', function (e) {
+                if (e.target.checked === true) {
+                    e.target.setAttribute("checked", "checked");
+                } else {
+                    e.target.removeAttribute("checked");
+                }
+            });
+        });
+
+        const elements2 = document.querySelectorAll('input[name="business_cri"]');
+        Array.from(elements2).forEach(function (element) {
+            element.addEventListener('change', function (e) {
+                if (e.target.checked === true) {
+                    e.target.setAttribute("checked", "checked");
+                } else {
+                    e.target.removeAttribute("checked");
+                }
+            });
+        });
+
+        const elements = document.querySelectorAll('.users_data');
+        Array.from(elements).forEach(function (element) {
+            element.addEventListener('change', function (e) {
+                if (e.target.checked === true) {
+                    e.target.setAttribute("checked", "checked");
+                } else {
+                    e.target.removeAttribute("checked");
+                }
+            });
+        });
+
+        const elements3 = document.querySelectorAll('.radio_fs');
+        Array.from(elements3).forEach(function (element) {
+            element.addEventListener('change', function (e) {
+                document.getElementsByName(e.target.name)[0].removeAttribute("checked");
+                document.getElementsByName(e.target.name)[1].removeAttribute("checked");
+                e.target.setAttribute("checked", "checked");
+            });
+        });
+
+        const elements4 = document.querySelectorAll('.radio_pt');
+        Array.from(elements4).forEach(function (element) {
+            element.addEventListener('change', function (e) {
+                document.getElementsByName(e.target.name)[0].removeAttribute("checked");
+                document.getElementsByName(e.target.name)[1].removeAttribute("checked");
+                e.target.setAttribute("checked", "checked");
+            });
+        });
+    })
+
+    const addActivities = (event) => {
+        let id = event.target.id;
+        let newRow = "<tr>";
+        newRow += "<td>Add topic name here</td>";
+        newRow += "<td>Add time frame here</td>";
+        newRow += "</tr>";
+
+        document.getElementById("activities_row").getElementsByTagName("tbody")[0].insertAdjacentHTML('beforeend', newRow)
+    }
+
+    const addTestingOverview = (event) => {
+        let trCount = document.getElementById("header_3_2").getElementsByTagName("tr").length;
+
+        let newRow = `<tr>
+                <td rowspan="2">
+                    Add event here
+                    <div>
+                        <input type="radio" name="radio_button_pt_`+trCount+`" class="radio_pt" value="radio_`+trCount+`_pt" checked="checked">
+                        <label for="radio_`+trCount+`_pt">In-house</label> 
+                        <input type="radio" name="radio_button_pt_`+trCount+`" class="radio_pt" value="radio_`+(trCount+1)+`_pt">
+                        <label for="radio_`+(trCount+1)+`_pt">Third Party</label>
+                    </div>
+                </td>
+                <td rowspan="2">Add test date here</td>
+                <td>Result:</td>
+            </tr>
+            <tr>
+                <td>Scope:</td>
+            </tr>`;
+        document.getElementById("testing_overview_row").getElementsByTagName("tbody")[0].insertAdjacentHTML('beforeend', newRow);
+        
+        const elements4 = document.getElementsByName("radio_button_pt_"+trCount);
+        Array.from(elements4).forEach(function (element) {
+            element.addEventListener('change', function (e) {
+                document.getElementsByName(e.target.name)[0].removeAttribute("checked");
+                document.getElementsByName(e.target.name)[1].removeAttribute("checked");
+                e.target.setAttribute("checked", "checked");
+            });
+        });
+    }
+
+    const addSupportTeamRow = (event) => {
+
+        let newRow = "<tr>";
+        newRow += "<td>Add role</td>";
+        newRow += "<td>Add name</td>";
+        newRow += "<td>Add email address</td>";
+        newRow += "</tr>";
+        document.getElementById("support_team_row").getElementsByTagName("tbody")[0].insertAdjacentHTML('beforeend', newRow)
+    }
+
+    
+    const delAddSub_7 = (e) => {
+        e.preventDefault();
+        if (getComputedStyle(document.querySelector('#addendum_header')).display === 'none') {
+            setAddendumHeader('1');
+            document.getElementById("addendum_header").setAttribute("style", "display:block");
+            document.getElementById("addAddendumSubsection").setAttribute("style", "display: flex; justify-content: flex-end; max-width: 83%; margin-left: auto; margin-right: auto; padding-top: 30px;");
+            setAddAendumText('Delete addendum')
+        } else {
+            setAddendumHeader('2');
+            document.getElementById("addendum_header").setAttribute("style", "display:none");
+            document.getElementById("addAddendumSubsection").setAttribute("style", "display:none");
+            setAddAendumText('Add addendum')
+        }
+    }
+
+    const delAddSub_1_1_1 = (e) => {
+        e.preventDefault();
+        if (getComputedStyle(document.querySelector('#header_1_1_1')).display === 'none') {
+            setHeader111('1');
+            document.getElementById("header_1_1_1").setAttribute("style", "display:block");
+            document.getElementById("add_1_1_1_subsection").setAttribute("style", "display:block");
+            set111Text("Delete section 1_1_1 text");
+            document.getElementById("header_1_1_2_txt").innerHTML = '1.1.2 &nbsp; &nbsp; Retest and Remediation';
+        } else {
+            setHeader111('2');
+            document.getElementById("header_1_1_1").setAttribute("style", "display:none");
+            document.getElementById("add_1_1_1_subsection").setAttribute("style", "display:none");
+            set111Text('Add section 1_1_1 text');
+            document.getElementById("header_1_1_2_txt").innerHTML = '1.1.1 &nbsp; &nbsp; Retest and Remediation';
+        }
+    }
+
+    const add_1_1_1_subsection = (e) => {
+        let header_1_1_1_subsection_div = htmlPurify(document.getElementsByClassName("header_1_1_1_subsection")[0].innerHTML);
+        document.querySelector(".header_1_1_1_subsection").insertAdjacentHTML('beforeend', `<div">${header_1_1_1_subsection_div}</div>`);
+
+    }
+
+    const addAddendumSubsection = (e) => {
+        let addendum_div = addendumDefaultSubsectionData;
+        document.querySelector(".addendum_subsection").insertAdjacentHTML('beforeend', `<br><div class="col-xs-12 col-md-12 col-lg-12 p-t-2">${addendum_div}</div>`);
+    }
+
+    const addTestingOverview_7 = (e) => {
+        if (e.target.classList.contains("addTestingOverview_7")) {
+            e.target.parentNode.nextSibling.getElementsByTagName("tbody")[0].insertAdjacentHTML('beforeend', `<tr><td rowspan="2">Add event here</td><td rowspan="2">Add test date here</td><td>Result:</td></tr><tr><td>Scope:</td></tr>`)
+        }
+    }
+
+
+    const[formData1, setFormData] = useState([]);
+
+
+    function htmlPurify(dirtyString) {
+        let cleanHtml = DOMPurify.sanitize(dirtyString);
+        return cleanHtml;
+    }
+
+    // function stripHtml(dirtyString) {
+    //     const doc = new DOMParser().parseFromString(dirtyString, 'text/html');
+    //     return doc.body.textContent || '';
+    // }
+
+    // function stripScripts(s) {
+    //     var div = document.createElement('div');
+    //     div.innerHTML = s;
+    //     var scripts = div.getElementsByTagName('script');
+    //     var i = scripts.length;
+    //     while (i--) {
+    //     scripts[i].parentNode.removeChild(scripts[i]);
+    //     }
+    //     return div.innerHTML;
+    //   }
+
+    const submitDraftSar = (event) => {
+        event.preventDefault();
+        document.addEventListener("click", (e) => {
+            if (e.target.classList.contains("addTestingOverview_7")) {
+                addTestingOverview_7(e)
+            }
+        }, true);
+        //Remove data before submit
+        let securityStatus = document.querySelectorAll('.header_3_4_security_status');
+        securityStatus.forEach(data => {
+                data.innerHTML = ''
+        });
+
+        let riskSumaryDropdown = document.querySelectorAll('.overall_residual_edit')
+        riskSumaryDropdown.forEach(data => {
+            data.innerHTML = ''
+        });
+
+        let combResidualEdit = document.querySelectorAll('.comb_residual_edit')
+        combResidualEdit.forEach(data => {
+            data.innerHTML = ''
+        });
+
+        let e1 = document.getElementById("addTestingOverview")
+        if(e1){
+            e1.remove();
+        }
+        let e2 = document.getElementById("addActivities")
+        if(e2){
+            e2.remove();
+        }
+        let el3 = document.getElementsByClassName("addTestingOverview_7");
+        if(el3[0]) {
+            document.getElementsByClassName('addTestingOverview_7')[0].style.display = 'none';
+        }
+        let addTestingOverview_7 = document.querySelectorAll('.addTestingOverview_7');
+        addTestingOverview_7.forEach(data => {
+                data.innerHTML = ''
+        });
+
+        //Remove data end
+
+        // let image_data = document.getElementById("header_2_1_img_show").innerHTML;
+        // document.getElementById("header_2_1_img_show").innerHTML = image_data.replace(config.BASE_LOCATION_IMAGE,"");
+        let header_1 = htmlPurify(document.getElementById("header_1").innerHTML);
+        let header_1_1 = htmlPurify(document.getElementById("header_1_1").innerHTML);
+        let header_1_1_1 = htmlPurify(document.getElementById("header_1_1_1").innerHTML);
+        /*let header_1_1_1_1 = htmlPurify(document.getElementById("header_1_1_1_1").innerHTML);
+        let header_1_1_1_2 = htmlPurify(document.getElementById("header_1_1_1_2").innerHTML);
+        let header_1_1_1_3 = htmlPurify(document.getElementById("header_1_1_1_3").innerHTML);*/
+        let header_1_1_2 = htmlPurify(document.getElementById("header_1_1_2").innerHTML);
+        let header_1_2 = htmlPurify(document.getElementById("header_1_2").innerHTML);
+        // let header_1_2 = htmlPurify(document.getElementById("header_1_2").innerHTML);
+        let header_1_3 = htmlPurify(document.getElementById("header_1_3").innerHTML);
+        let header_1_4 = htmlPurify(document.getElementById("header_1_4").innerHTML);
+        let header_1_5 = htmlPurify(document.getElementById("header_1_5").innerHTML);
+        let header_2 = htmlPurify(document.getElementById("header_2").innerHTML);
+        let header_2_1 = htmlPurify(document.getElementById("header_2_1").innerHTML);
+        let header_2_2 = '';
+        let header_2_2_1 = ''; 
+        let header_2_2_2 = ''; 
+        let header_2_2_3 = ''; 
+        let header_2_2_4 = ''; 
+        let header_2_2_5 = ''; 
+        let header_2_2_6 = ''; 
+        let header_2_2_7 = ''; 
+        if(document.getElementById("header_2_2_1")) {
+            header_2_2 = htmlPurify(document.getElementById("header_2_2").innerHTML);
+            header_2_2_1 = htmlPurify(document.getElementById("header_2_2_1").innerHTML);
+            header_2_2_2 = htmlPurify(document.getElementById("header_2_2_2").innerHTML);
+            header_2_2_3 = htmlPurify(document.getElementById("header_2_2_3").innerHTML);
+            header_2_2_4 = htmlPurify(document.getElementById("header_2_2_4").innerHTML);
+            header_2_2_5 = htmlPurify(document.getElementById("header_2_2_5").innerHTML);
+            header_2_2_6 = htmlPurify(document.getElementById("header_2_2_6").innerHTML);
+            header_2_2_7 = htmlPurify(document.getElementById("header_2_2_7").innerHTML);
+        }
+        let header_3 = htmlPurify(document.getElementById("header_3").innerHTML);
+        let header_3_1 = '';
+        let header_3_3 = '';
+        if(document.getElementById("header_3_1")) {
+            header_3_1 = htmlPurify(document.getElementById("header_3_1").innerHTML);
+            header_3_3 = htmlPurify(document.getElementById("header_3_3").innerHTML);
+        }
+        let header_3_2 = htmlPurify(document.getElementById("header_3_2").innerHTML);
+        let header_3_4 = htmlPurify(document.getElementById("header_3_4").innerHTML);
+        // let header_4 = htmlPurify(document.getElementById("header_4").innerHTML);
+        // let header_5 = htmlPurify(document.getElementById("header_5").innerHTML);
+        let header_6 = htmlPurify(document.getElementById("header_6").innerHTML);
+        let header_7 = htmlPurify(document.getElementById("header_7").innerHTML);
+        let header_support_team = htmlPurify(document.getElementById("header_support_team").innerHTML);
+        let addendum_header = htmlPurify(document.getElementById("addendum_header").innerHTML);
+
+        let sar_comments = document.getElementById("sar_comments")
+        if(sar_comments){
+            sar_comments = sar_comments.value
+        }
+
+        let formData = new FormData();
+        let data = {
+        'header_1':header_1,
+        'header_1_1':header_1_1,
+        'header_1_1_1':header_1_1_1,
+        'header_1_1_2':header_1_1_2,
+        'header_1_2':header_1_2,
+        'header_1_3':header_1_3,
+        'header_1_4':header_1_4,
+        'header_1_5':header_1_5,
+        'header_2':header_2,
+        'header_2_1':header_2_1,
+        'header_2_2':header_2_2,
+        'header_2_2_1':header_2_2_1,
+        'header_2_2_2':header_2_2_2,
+        'header_2_2_3':header_2_2_3,
+        'header_2_2_4':header_2_2_4,
+        'header_2_2_5':header_2_2_5,
+        'header_2_2_6':header_2_2_6,
+        'header_2_2_7':header_2_2_7,
+        'header_3':header_3,
+        'header_3_1':header_3_1,
+        'header_3_2':header_3_2,
+        'header_3_3':header_3_3,
+        'header_3_4':header_3_4,
+        'header_6':header_6,
+        'header_7':header_7,
+        'header_support_team':header_support_team,
+        'addendum_header':addendum_header,
+        'is_addendum_sec':addendumHeader,
+        'is_header_1_1_1_sec':header111,
+        }
+
+        if(apiData?.header_first_page){
+            let header_first_page = htmlPurify(document.getElementById("header_first_page").innerHTML);
+            data.header_first_page = header_first_page
+        }
+
+        if(apiData?.header_revision_second_page){
+            let header_revision_second_page = htmlPurify(document.getElementById("header_revision_second_page").innerHTML);
+            let header_reviewer_second_page = htmlPurify(document.getElementById("header_reviewer_second_page").innerHTML);
+            data.header_revision_second_page = header_revision_second_page
+            data.header_reviewer_second_page = header_reviewer_second_page
+        }
+        // let data = {
+        //     "assessmentId" : assessmentId,
+        //     "sarTemplateData" : JSON.stringify(formData1),
+        //     "submitId" : event.target.id,
+        //     "sarComments" : sar_comments
+        // }
+
+            formData.append("assessmentId" , assessmentId)
+            formData.append("sarTemplateData" , JSON.stringify([data]))
+            formData.append("submitId" , event.target.id)
+            formData.append("sarComments" , sar_comments)
+            // let test = document.querySelectorAll('.overall_residual_risk > div > h4 > b > span')[0];
+
+            let overallRisk = document.getElementsByClassName('overall_residual_risk')[0].innerText;
+            formData.append("overallRisk" , overallRisk)
+            setIsLoading(true)
+            postSarViewEdit(formData).then((result) => {
+                if(result.exception){
+                    notify("Something went wrong",'error');
+                }else{
+                    // let e1 = document.getElementById("header_2_1_img");
+                    // if(e1){
+                        // e1.remove();
+                    // }
+                    notify(result.data.message,'success');
+                    if(event.target.id == "submit_sar"){
+                        setTimeout(() => {
+                            history.push('/requestor-list')
+                        }, 800)
+                    } else {
+                        window.location.reload();
+                    }
+                    /*getSarData(assessmentId).then((result) => {
+
+                        let sarData = {};
+                        Object.keys(result.data.data.editSarTemplate).map((key, index) => {
+                            sarData[key] = htmlPurify(result.data.data.editSarTemplate[key]);
+                        })
+
+                        setApiData(sarData);
+                        setAllData(result.data.data);
+                        set111Text(result.data.data.sub_1_1_1_btn_val);
+                        setAddAendumText(result.data.data.sub_7_btn_val)
+                        setIsLoading(false)
+                    });*/
+                }
+            });
+
+    }
+
+    const submitCloneSAR = (event, assessmentID) => {
+        window.open('../testing-conducting-security/'+assessmentID+'/no', "_blank");
+    }
+
+    const addRevisionHistory = (event) => {
+            
+        var revHisRow = "<tr>";
+        revHisRow += "<td>Add version</td>";
+        revHisRow += "<td>Add author</td>";
+        revHisRow += "<td>Add date</td>";
+        revHisRow += "<td>Add revision</td>";
+        revHisRow += "</tr>";
+        document.getElementById("reviewer_his_row").getElementsByTagName("tbody")[0].insertAdjacentHTML('beforeend', revHisRow)
+
+    }
+
+    const addReviewerRow = (event) => {
+
+        var revRow = "<tr>";
+        revRow += "<td>Add reviewer</td>";
+        revRow += "<td>Add date reviewed</td>";
+        revRow += "</tr>";
+        document.getElementById("reviewer_row").getElementsByTagName("tbody")[0].insertAdjacentHTML('beforeend', revRow)
+        
+    }
+
+    const formData = new FormData();
+    formData.append('sgpId',allData?.sgpId)
+
+    var userData = JSON.parse(localStorage.getItem("authUser"));
+    userData = `${userData.token}pathpollution${base64_encode(userData.details.id)}`
+
+    return (
+        <React.Fragment>
+            <div className="page-content">
+                <IdleTimerContainer />
+                <Container fluid={true}>
+                    <BreadCrumb
+                        title={allData?.page_title}
+                        pageTitle="Home"
+                        breadCrumbUrls={breadCrumbUrls}
+                        link={"/requestor-list"}
+                    />
+                    <Row>
+                        <Col lg={6} md={6}>
+                            <Card>
+                                <CardBody>
+                                    <div className="d-flex align-items-center">
+                                        <div className="flex-grow-1 ms-3">
+                                            <h4 className="text-primary">
+                                                Project name:{"\u00A0"}
+                                                {allData?.projectName}
+                                            </h4>
+                                        </div>
+                                    </div>
+                                </CardBody>
+                            </Card>
+                        </Col>
+
+                        <Col lg={6} md={6}>
+                            <Card>
+                                <CardBody>
+                                    <div className="d-flex align-items-center">
+                                        <div className="flex-grow-1 ms-3">
+                                            <h4 className="text-primary">
+                                                Assessment Type:{"\u00A0"}
+                                                {allData?.assessmentType}
+                                            </h4>
+                                        </div>
+                                    </div>
+                                </CardBody>
+                            </Card>
+                        </Col>
+                    </Row>
+                    {isLoading && <Loader />}
+                    <Row className="sar-template-css">
+                        {allData?.isSarTemplateClone == 'yes' && (<Col lg={12}>
+                            <Card>
+                                <CardBody>
+                                    <div className="row">
+                                        <div className="col-md-10"><h3>Comments from security team and solution team</h3></div>
+                                    </div>
+                                    <table className="table table-bordered table-striped table-lg">
+                                        <thead>
+                                            <tr>
+                                                <th>{allData.isSarTemplateCloneMsg}</th>
+                                            </tr>
+                                        </thead>
+                                    </table>
+                                </CardBody>
+                            </Card>
+                        </Col>)}
+                        {allData?.sarLogComments && (<Col lg={12}>
+                            <Card>
+                                <CardBody>
+                                    <div className="row">
+                                        <div className="col-md-10"><h3>Comments from security team and solution team</h3></div>
+                                    </div>
+                                    <table className="table table-bordered table-striped table-lg">
+                                        <thead>
+                                            <tr>
+                                                <th>Comments by</th>
+                                                <th>Comments</th>
+                                                <th>Comments date</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {allData.sarLogComments.length > 0 ?
+                                                allData.sarLogComments.map((data,index) => {
+                                                    return (
+                                                        <tr key={index}>
+                                                            <td>{`${data.first_name} ${data.last_name} (${data.name})`}</td>
+                                                            <td>{data.comments}</td>
+                                                            <td>{format(new Date(data.created_date), "dd MMM  yyyy")}</td>
+                                                        </tr>
+                                                    );
+                                                }) : <tr><td colSpan="3"><center>No Record Found</center></td></tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </CardBody>
+                            </Card>
+                        </Col>)}
+                        {allData?.securityLogComments && (<Col lg={12}>
+                            <Card>
+                                <CardBody>
+                                    <div className="row">
+                                        <div className="col-md-10"><h3>Internal security team comments</h3></div>
+                                    </div>
+                                    <table className="table table-bordered table-striped table-lg">
+                                        <thead>
+                                            <tr>
+                                                <th>Comments by</th>
+                                                <th>Comments</th>
+                                                <th>Comments date</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {allData.securityLogComments.length > 0 ?
+                                                allData.securityLogComments.map((data,index) => {
+                                                    return (
+                                                        <tr key={index}>
+                                                            <td>{`${data.first_name} ${data.last_name} (${data.name})`}</td>
+                                                            <td>{data.comments}</td>
+                                                            <td>{format(new Date(data.created_date), "dd MMM  yyyy")}</td>
+                                                        </tr>
+                                                    );
+                                                }) : <tr><td colSpan="3"><center>No Record Found</center></td></tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </CardBody>
+                            </Card>
+                        </Col>)}
+                        {allData?.ipgSummary && (<Col lg={12}>
+                            <Card>
+                                <CardBody>
+                                    <div className="row">
+                                        <div className="col-md-10"><h3>Summary from security architect</h3></div>
+                                    </div>
+                                    <table className="table table-bordered table-striped table-lg">
+                                        <thead>
+                                            <tr>
+                                                <th>Summary</th>
+                                                <th>Summary date</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {allData.ipgSummary.length > 0 ?
+                                                allData.ipgSummary.map((data,index) => {
+                                                    return (
+                                                        <tr key={index}>
+                                                            <td>{data.comments}</td>
+                                                            <td>{format(new Date(data.created_date), "dd MMM yyyy")}</td>
+                                                        </tr>
+                                                    );
+                                                }) : <tr><td colSpan="3"><center>No Record Found</center></td></tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </CardBody>
+                            </Card>
+                        </Col>)}
+                        {/* {allData?.isExportPdf && (<div className="text-end pb-2">
+                            <a href="/clearance/clearance-get-pdf/050100" onClick={(e) => handleDownloadPdf(e)} className="btn btn-custom-primary"><i className="ri-file-list-3-line align-middle"></i>Export as PDF</a>
+                        </div>)} */}
+                        {allData?.isExportPdf && (<div className="text-end pb-2">
+                            <Link
+                            to={"#"}
+                            className="float-right btn btn-custom-primary"
+                            onClick={(e) =>
+                                downloadPdfFile(
+                                e,
+                                "/clearance/clearance-get-pdf",
+                                formData,
+                                `SAR - ${allData?.solutionName}`
+                                )
+                            }
+                            >
+                            <i className="ri-file-list-3-line align-middle"></i>Export as PDF
+                            </Link> 
+                            {/*<a href={`${config.BASE_URL}/clearanceDownloadPdf/${allData?.sgpId}`} className="btn btn-custom-primary"><i className="ri-file-list-3-line align-middle"></i>Export as PDF</a>*/}
+                        </div>)}
+                        <div  ref={printRef} >
+                        {apiData?.header_first_page && (<div style={{width:'75%', display: 'block', marginLeft: 'auto', marginRight: 'auto'}}>
+                            <div className="row">
+                                <div className="col-xs-12 col-md-12">
+                                    <Card>
+                                        <CardBody>
+                                            <div className="panel">
+                                                <div className="panel-body">
+                                                    <div id="header_first_page" suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable}>
+                                                        <div suppressContentEditableWarning={true} onClick={(e) => clickHandler(e)} dangerouslySetInnerHTML={{ __html: apiData.header_first_page }}></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </CardBody>
+                                    </Card>
+                                </div>
+                            </div>
+                        </div>)}
+                        {apiData?.header_revision_second_page && (<Row>
+                            <Col lg={12}>
+                                <Card>
+                                    <CardBody>
+                                        <div className="panel">
+                                            <div className="panel-body">
+                                                <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
+                                                    <div style={{maxWidth: '83%', marginRight: 'auto', paddingTop: '30px'}}>
+                                                        <h2 className="text-primary">Document review and approval</h2>
+                                                    </div>
+                                                    <div>
+                                                        {allData?.isContentEditable == 'true' && (<button type="button" id="addRevisionHistory" onClick={(e) => addRevisionHistory(e)} className="btn btn-custom-primary"> + Add revision history</button>)}
+                                                        <div id="header_revision_second_page" suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} dangerouslySetInnerHTML={{ __html: apiData.header_revision_second_page }}>
+                                                        </div>
+                                                        <br/>
+                                                        {allData?.isContentEditable == 'true' && (<button type="button" id="addReviewerRow" onClick={(e) => addReviewerRow(e)} className="btn btn-custom-primary"> + Add reviewer</button>)}      
+                                                        <div id="header_reviewer_second_page" suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} dangerouslySetInnerHTML={{ __html: apiData.header_reviewer_second_page }}>
+                                                        </div>
+                                                        <br/>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </CardBody>
+                                </Card>
+                            </Col>
+                        </Row>)}
+                        <Col lg={12}>
+                            <Card>
+                                <CardBody>
+                                    <div>
+                                        <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
+                                            <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px', }}>
+                                                <h2 className="text-primary">1 &nbsp; &nbsp; Solution Overview</h2>
+                                            </div>
+                                            <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1" dangerouslySetInnerHTML={{ __html: apiData.header_1 }}>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
+                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                                                    <h3 className="text-primary">1.1 &nbsp; &nbsp; Risk Summary</h3>
+                                                </div>
+                                                <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1_1" onClick={(e) => clickHandler(e)} dangerouslySetInnerHTML={{ __html: apiData.header_1_1 }}>
+                                                </div>
+
+                                                {/* <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                                                    <h4 className="text-primary">1.1.1 &nbsp; &nbsp; Unresolved High and Medium Risk Items</h4>
+                                                </div>
+                                                <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1_1_1" dangerouslySetInnerHTML={{ __html: apiData.header_1_1_1 }}>
+                                                </div> */}
+
+                                                <div style={{ display: 'none', justifyContent: 'flex-end', maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }} id='add_1_1_1_subsection' onClick={e => add_1_1_1_subsection(e)}>
+                                                    <button style={{ float: 'right' }} type="button" className="btn btn-custom-primary"> + Add subsection</button>
+                                                </div>
+                                                
+                                                <div style={{ display: apiData.header_1_1_1 ? 'block' : 'none' }} suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1_1_1" dangerouslySetInnerHTML={{ __html: apiData.header_1_1_1 ? apiData.header_1_1_1 : header111DefaultData }}>
+                                                </div>
+
+                                                {/* <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                                                </div>
+                                                <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1_1_1_1" dangerouslySetInnerHTML={{ __html: apiData.header_1_1_1_1 }}>
+                                                </div>
+
+                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                                                    <h4 className="text-primary">1.1.1.2 &nbsp; &nbsp; High or Medium Risk Item 2</h4>
+                                                </div>
+                                                <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1_1_1_2" dangerouslySetInnerHTML={{ __html: apiData.header_1_1_1_2 }}>
+                                                </div>
+
+                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                                                    <h4 className="text-primary">1.1.1.3 &nbsp; &nbsp; High or Medium Risk Item 3</h4>
+                                                </div>
+                                                <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1_1_1_3">
+                                                    <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto' }}>
+                                                        <div><h5>[Statement about the risk, remediation data and residual risk.]</h5></div>
+                                                    </div>
+                                                </div> */}
+
+                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                                                    <h4 className="text-primary"><div id="header_1_1_2_txt" dangerouslySetInnerHTML={{ __html: allData?.header_1_1_2_txt}}></div></h4>
+                                                </div>
+                                                <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1_1_2" dangerouslySetInnerHTML={{ __html: apiData.header_1_1_2 }}>
+                                                </div>
+
+                                            </div>
+                                            <div>
+                                                <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
+                                                    <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                                                        <h3 className="text-primary">1.2 &nbsp; &nbsp; Solution Summary</h3>
+                                                    </div>
+                                                    <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1_2" dangerouslySetInnerHTML={{ __html: apiData.header_1_2 }}>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
+                                                    <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                                                        <h3 className="text-primary">1.3 &nbsp; &nbsp; Data Classification and Business Criticality</h3>
+                                                    </div>
+                                                    <div suppressContentEditableWarning={true} contentEditable={false} id="header_1_3" dangerouslySetInnerHTML={{ __html: apiData.header_1_3 }}>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
+                                                    <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                                                        <h3 className="text-primary">1.4 &nbsp; &nbsp; Users</h3>
+                                                    </div>
+                                                    <div contentEditable="false" id="header_1_4" dangerouslySetInnerHTML={{ __html: apiData.header_1_4 }}>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
+                                                    <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                                                        <h3 className="text-primary">1.5 &nbsp; &nbsp; Hosting</h3>
+                                                    </div>
+                                                    <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1_5" dangerouslySetInnerHTML={{ __html: apiData.header_1_5 }}>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
+                                                    <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                                                        <h2 className="text-primary">2 &nbsp; &nbsp; Architecture</h2>
+                                                    </div>
+                                                    <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2" dangerouslySetInnerHTML={{ __html: apiData.header_2 }}>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
+                                                    <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                                                        <h3 className="text-primary">2.1 &nbsp; &nbsp; High Level Technical Architecture Diagram<br></br><span style={{fontSize:'10px',color:'red'}}>(Notes: Only allowed formats are : jpg,jpeg,png)</span></h3>
+                                                    </div>
+                                                    <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto' }} id="header_2_1_img"></div>
+                                                    <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_1" dangerouslySetInnerHTML={{ __html: apiData.header_2_1 }}>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            {apiData?.header_2_2_1 && (
+                                                <div>
+                                                    <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
+                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                                                            <h3 className="text-primary">2.2 &nbsp; &nbsp; Key Security Features</h3>
+                                                        </div>
+                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_2" dangerouslySetInnerHTML={{ __html: apiData.header_2_2 }}>
+                                                        </div>
+                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                                                            <h4 className="text-primary">2.2.1 &nbsp; &nbsp; General Environment <br></br><span style={{fontSize:'10px',color:'red'}}>(Notes: This is a text field supports up to maximum of 300,000 characters (including spaces), and it does not support below characters: *, >>, & , /, \, etc.)</span></h4>
+                                                        </div>
+                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_2_1" dangerouslySetInnerHTML={{ __html: apiData.header_2_2_1 }}>
+                                                        </div>
+                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                                                            <h4 className="text-primary">2.2.2 &nbsp; &nbsp; Authentication / Authorization</h4>
+                                                        </div>
+                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_2_2" dangerouslySetInnerHTML={{ __html: apiData.header_2_2_2 }}>
+                                                        </div>
+                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                                                            <h4 className="text-primary">2.2.3 &nbsp; &nbsp; Data Separation</h4>
+                                                        </div>
+                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_2_3" dangerouslySetInnerHTML={{ __html: apiData.header_2_2_3 }}>
+                                                        </div>
+                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                                                            <h4 className="text-primary">2.2.4 &nbsp; &nbsp; Encryption</h4>
+                                                        </div>
+                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_2_4" dangerouslySetInnerHTML={{ __html: apiData.header_2_2_4 }}>
+                                                        </div>
+                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                                                            <h4 className="text-primary">2.2.5 &nbsp; &nbsp; Logging and Monitoring (Auditing)</h4>
+                                                        </div>
+                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_2_5" dangerouslySetInnerHTML={{ __html: apiData.header_2_2_5 }}>
+                                                        </div>
+                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                                                            <h4 className="text-primary">2.2.6 &nbsp; &nbsp; Reporting / Data Exporting</h4>
+                                                        </div>
+                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_2_6" dangerouslySetInnerHTML={{ __html: apiData.header_2_2_6 }}>
+                                                        </div>
+                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                                                            <h4 className="text-primary">2.2.7 &nbsp; &nbsp; External Content</h4>
+                                                        </div>
+                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_2_7" dangerouslySetInnerHTML={{ __html: apiData.header_2_2_7 }}>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {apiData?.header_3_1 ? (
+                                            <>
+                                                <div>
+                                                    <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
+                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                                                            <h2 className="text-primary">3 &nbsp; &nbsp; Technology Security Review</h2>
+                                                        </div>
+                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_3" dangerouslySetInnerHTML={{ __html: apiData.header_3 }}>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="col-xs-12 col-md-12 col-lg-12 p-t-2" id="activities_row">
+                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                                                            <button style={{ 'float': 'right', display: allData?.isContentEditable == "true" ? 'block' : 'none' }} type="button" id='addActivities' value='1234' className="btn btn-custom-primary" onClick={(e) => addActivities(e)}> + Add Activities</button>
+                                                            <h3 className="text-primary">3.1 &nbsp; &nbsp; Activities</h3>
+                                                        </div>
+
+                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_3_1" dangerouslySetInnerHTML={{ __html: apiData.header_3_1 }}>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="col-xs-12 col-md-12 col-lg-12 p-t-2" id="testing_overview_row">
+                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                                                            <button style={{ float: 'right', display: allData?.isContentEditable == "true" ? 'block' : 'none' }} type="button" id='addTestingOverview' value='1234' className="btn btn-custom-primary" onClick={(e) => addTestingOverview(e)}> + Add Testing Overview</button>
+                                                            <h3 className="text-primary">3.2 &nbsp; &nbsp; Testing Overview</h3>
+                                                        </div>
+                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_3_2" dangerouslySetInnerHTML={{ __html: apiData.header_3_2 }}>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
+                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                                                            <h3 className="text-primary">3.3 &nbsp; &nbsp; Testing Approach</h3>
+                                                        </div>
+                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_3_3" dangerouslySetInnerHTML={{ __html: apiData.header_3_3 }}>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
+                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                                                            <h3 className="text-primary">3.4 &nbsp; &nbsp; High Level Security Requirements <br></br><span style={{fontSize:'10px',color:'red'}}>(Notes for comment section: [255 characters. Comment if the solution was partially implemented, not implemented, not assessed or there is a gap])</span></h3>
+                                                        </div>
+                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_3_4" dangerouslySetInnerHTML={{ __html: apiData.header_3_4 }}>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </>
+                                            ) : (
+                                            <>
+                                                <div>
+                                                    <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
+                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                                                            <h2 className="text-primary">3 &nbsp; &nbsp; Assessment Overview</h2>
+                                                        </div>
+                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_3" dangerouslySetInnerHTML={{ __html: apiData.header_3 }}>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="col-xs-12 col-md-12 col-lg-12 p-t-2" id="testing_overview_row">
+                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                                                            <button style={{ float: 'right', display: allData?.isContentEditable == "true" ? 'block' : 'none' }} type="button" id='addTestingOverview' value='1234' className="btn btn-custom-primary" onClick={(e) => addTestingOverview(e)}> + Add Testing Overview</button>
+                                                            <h3 className="text-primary">3.1 &nbsp; &nbsp; Overview</h3>
+                                                        </div>
+                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_3_2" dangerouslySetInnerHTML={{ __html: apiData.header_3_2 }}>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
+                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                                                            <h3 className="text-primary">3.2 &nbsp; &nbsp; High Level Security Requirements<br></br><span style={{fontSize:'10px',color:'red'}}>(Notes for comment section: [255 characters. Comment if the solution was partially implemented, not implemented, not assessed or there is a gap])</span></h3>
+                                                        </div>
+                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_3_4" dangerouslySetInnerHTML={{ __html: apiData.header_3_4 }}>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </>
+                                            )}
+                                        </div>
+
+                                        <div>
+                                            <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
+                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                                                    <h2 className="text-primary">4 &nbsp; &nbsp;  Plan of Action and Milestone (POA&M)</h2>
+                                                </div>
+                                                <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_6" dangerouslySetInnerHTML={{ __html: apiData.header_6 }}>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <div id="header_6_1" className="col-xs-12 col-md-12 col-lg-12 p-t-2">
+                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                                                    <h3 className="text-primary">4.1 &nbsp; &nbsp; High Risk Findings</h3>
+                                                </div>
+                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                                                    <div suppressContentEditableWarning={true}  id="header_6_1" dangerouslySetInnerHTML={{ __html: allData?.securityObservationsData.High }}>
+                                                </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <div id="header_6_2" className="col-xs-12 col-md-12 col-lg-12 p-t-2">
+                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                                                    <h3 className="text-primary">4.2 &nbsp; &nbsp; Medium Risk Findings</h3>
+                                                </div>
+                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                                                    <div suppressContentEditableWarning={true}  id="header_6_2" dangerouslySetInnerHTML={{ __html:  allData?.securityObservationsData.Medium }}>
+                                                </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <div id="header_6_3" className="col-xs-12 col-md-12 col-lg-12 p-t-2">
+                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                                                    <h3 className="text-primary">4.3 &nbsp; &nbsp; Low Risk Findings</h3>
+                                                </div>
+                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                                                    <div suppressContentEditableWarning={true} id="header_6_3" dangerouslySetInnerHTML={{ __html:  allData?.securityObservationsData.Low }}>
+                                                </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
+                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                                                    <h2 className="text-primary">5 &nbsp;&nbsp; Additional Business Considerations</h2>
+                                                </div>
+                                                <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_7" dangerouslySetInnerHTML={{ __html: apiData.header_7 }}>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <div style={{ display: allData?.isContentEditable == "true" ? 'flex' : 'none', justifyContent: 'flex-end', maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }} id='addSupportTeamRow' onClick={(e) => addSupportTeamRow(e)}>
+                                            {allData?.isContentEditable == 'true' && (<button style={{ float: 'right' }} type="button" className="btn btn-custom-primary"> + Add row</button>)}
+                                            </div>
+
+                                            {/* <div id="header_support_team" className="col-xs-12 col-md-12 col-lg-12 p-t-2" suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable}>
+                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                                                    <h2 className="text-primary">6 &nbsp; &nbsp; Key Contact Details</h2>
+                                                </div>
+                                            </div> */}
+
+                                            <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_support_team" dangerouslySetInnerHTML={{ __html: apiData.header_support_team }}>
+                                            </div>
+                                        </div>
+
+                                        <div style={{ display: allData?.sub_7_display_flex, justifyContent: 'flex-end', maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }} id='addAddendumSubsection' onClick={e => addAddendumSubsection(e)}>
+                                            <button style={{ float: 'right' }} type="button" className="btn btn-custom-primary"> + Add addendum subsection</button>
+                                        </div>
+
+                                        <div style={{ display: allData?.sub_7_display }} suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="addendum_header" dangerouslySetInnerHTML={{ __html: apiData.addendum_header ? apiData.addendum_header : addendumDefaultData }}>
+                                        </div>
+
+                                        {allData?.comments && (<div className="row">
+                                            <div className="col-xs-12 col-md-8 col-sm-12">
+                                                <input type="text" name="sar_comments" id="sar_comments" className="form-control" defaultValue="" />
+                                                <label htmlFor="sar_comments">Comments</label>
+                                            </div>
+                                        </div>)}
+                                        <div className="row">
+                                            <div className="col-xs-12 col-md-12">
+                                                <div className="text-xs-left m-b-20">
+                                                    {allData?.sar_save_as_draft && (<input type="submit" name="sar_save_as_draft" id="sar_save_as_draft" value="Save as draft" className="btn btn-custom-primary mx-1" onClick={e => submitDraftSar(e)} />)}
+
+                                                    {allData?.sar_clone_button && (<input type="submit" name="sar_clone_button" id="sar_clone_button" value="Re-clone SAR" className="btn btn-custom-primary mx-1" onClick={e => submitCloneSAR(e,allData?.assessmentId)} />)}
+
+                                                    {allData?.del_add_sub_7 && (
+                                                    <input type="submit" name="del_add_sub_7" id="del_add_sub_7" value={addAendumText} className="btn btn-custom-primary mx-1" onClick={e => delAddSub_7(e)} />)}
+
+                                                    {allData?.del_add_sub_1_1_1 && (
+                                                    <input type="submit" name="del_add_sub_1_1_1" id="del_add_sub_1_1_1" value={sub111text} className="btn btn-custom-primary mx-1" onClick={e => delAddSub_1_1_1(e)} />)}
+
+                                                    {allData?.sar_approve && (
+                                                    <input type="submit" name="sar_approve" id="sar_approve" value="Submit to solution team" className="btn btn-custom-info mx-1" onClick={e => submitDraftSar(e)} />)}
+
+                                                    {allData?.submit_sar && (
+                                                    <input type="submit" name="submit_sar" id="submit_sar" value="Finalize" className="btn btn-custom-info submit_draft_sar mx-1" onClick={e => submitDraftSar(e)} />)}
+
+                                                    {allData?.sar_save_send_as_draft && (
+                                                    <input type="submit" name="sar_save_as_draft" id="sar_save_send_as_draft" value="Save and return to final draft" className="btn btn-custom-primary submit_draft_sar" onClick={e => submitDraftSar(e)} />)}
+
+                                                    {allData?.solution_sar_approve && (
+                                                    <input type="submit" name="solution_sar_approve" id="solution_sar_approve" value="Approve" className="btn btn-custom-info submit_draft_sar" onClick={e => submitDraftSar(e)} />)}
+
+                                                    {allData?.solution_sar_reject && (
+                                                    <input type="submit" name="solution_sar_reject" id="solution_sar_reject" value="Request revisions" className="btn btn-custom-danger submit_draft_sar" onClick={e => submitDraftSar(e)} />)}
+
+                                                    {allData?.ana_sar_submit && (
+                                                    <input type="submit" name="ana_sar_submit" id="ana_sar_submit" value="Submit to coordinator" className="btn btn-custom-info submit_draft_sar" onClick={e => submitDraftSar(e)} />)}
+
+                                                    {allData?.ipg_sar_submit && (
+                                                    <input type="submit" name="ipg_sar_submit" id="ipg_sar_submit" value="Submit to leadership & the delegate" className="btn btn-custom-primary submit_draft_sar" onClick={e => submitDraftSar(e)} />)}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </CardBody>
+                            </Card>
+                        </Col>
+                        </div>
+                    </Row>
+
+                </Container>
+            </div>
+        </React.Fragment>
+    );
 };
 
-/* ============================================================================
- * CARD WRAPPER  (titles use font-extrabold per spec)
- * ========================================================================== */
-
-export function Card({
-  title,
-  children,
-  className = '',
-  headerRight,
-}: {
-  title: string;
-  children: React.ReactNode;
-  className?: string;
-  headerRight?: React.ReactNode;
-}) {
-  return (
-    <div
-      className={`flex flex-col min-h-0 min-w-0 rounded-lg border border-grey5 dark:border-white/10 bg-white dark:bg-[#111C44] p-2 shadow-sm overflow-hidden ${className}`}
-    >
-      <div className="mb-1.5 flex items-center justify-between gap-1">
-        <h3 className="flex-1 text-center text-[9px] font-extrabold uppercase tracking-[0.08em] text-kpmg-default dark:text-light-blue truncate">
-          {title}
-        </h3>
-        {headerRight}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-/* ============================================================================
- * TOGGLE GROUP
- * ========================================================================== */
-
-export function ToggleGroup<T extends string>({
-  options,
-  value,
-  onChange,
-  className = '',
-}: {
-  options: Array<{ value: T; label: string }>;
-  value: T;
-  onChange: (v: T) => void;
-  className?: string;
-}) {
-  return (
-    <div
-      className={`mb-1.5 flex self-center gap-0.5 rounded border border-grey5 bg-grey5/40 p-0.5 dark:border-white/10 dark:bg-[#0F172A] ${className}`}
-    >
-      {options.map((opt) => {
-        const active = opt.value === value;
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => onChange(opt.value)}
-            className={`cursor-pointer rounded px-1.5 py-[2px] text-[7px] font-bold uppercase transition-colors ${
-              active
-                ? 'bg-kpmg-default text-white'
-                : 'bg-transparent text-grey2 dark:text-light-blue/60'
-            }`}
-          >
-            {opt.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-/* ============================================================================
- * CUSTOM DROPDOWN  (replaces native <select>; gets cursor-pointer everywhere)
- * ========================================================================== */
-
-export function Dropdown<T extends string>({
-  options,
-  value,
-  onChange,
-  placeholder = 'Select...',
-}: {
-  options: Array<{ value: T; label: string; description?: string }>;
-  value: T;
-  onChange: (v: T) => void;
-  placeholder?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    const escHandler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    document.addEventListener('keydown', escHandler);
-    return () => {
-      document.removeEventListener('mousedown', handler);
-      document.removeEventListener('keydown', escHandler);
-    };
-  }, [open]);
-
-  const selected = options.find((o) => o.value === value);
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-grey5 bg-grey5/20 px-3 py-2 text-sm font-medium text-dark-blue transition-all hover:border-kpmg-default/50 hover:bg-white focus:border-kpmg-default focus:bg-white focus:outline-none dark:border-white/10 dark:bg-[#060B28] dark:text-white dark:hover:border-light-blue/40 dark:hover:bg-[#0F172A] dark:focus:bg-[#0F172A]"
-      >
-        <span className="truncate">{selected?.label ?? placeholder}</span>
-        <svg
-          className={`shrink-0 text-grey2 transition-transform dark:text-light-blue/60 ${
-            open ? 'rotate-180' : ''
-          }`}
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
-      </button>
-
-      {open && (
-        <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-lg border border-grey5 bg-white py-1 shadow-lg dark:border-white/10 dark:bg-[#0F172A]">
-          {options.map((opt) => {
-            const active = opt.value === value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => {
-                  onChange(opt.value);
-                  setOpen(false);
-                }}
-                className={`flex w-full cursor-pointer items-start justify-between gap-2 px-3 py-2 text-left transition-colors ${
-                  active
-                    ? 'bg-kpmg-default/10 text-kpmg-default dark:bg-light-blue/10 dark:text-light-blue'
-                    : 'text-dark-blue hover:bg-grey5/40 dark:text-white dark:hover:bg-white/5'
-                }`}
-              >
-                <div className="flex-1">
-                  <div className="text-sm font-medium">{opt.label}</div>
-                  {opt.description && (
-                    <div className="mt-0.5 text-[10px] font-normal text-grey2 dark:text-light-blue/60">
-                      {opt.description}
-                    </div>
-                  )}
-                </div>
-                {active && (
-                  <svg
-                    className="mt-0.5 shrink-0"
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ============================================================================
- * ROW 1 - KPI CARDS  (no font-extrabold inside body content)
- * ========================================================================== */
-
-export function RiskScoreCard() {
-  const score = 67;
-  const C = 2 * Math.PI * 30;
-  const offset = C - (score / 100) * C;
-
-  return (
-    <Card title="Risk Score">
-      <div className="flex flex-1 flex-col items-center justify-center min-h-0 gap-1">
-        <div className="relative h-[68px] w-[68px]">
-          <svg width="68" height="68" style={{ transform: 'rotate(-90deg)' }}>
-            <circle cx="34" cy="34" r="30" fill="none" strokeWidth="5" className="stroke-grey5 dark:stroke-white/10" />
-            <circle
-              cx="34"
-              cy="34"
-              r="30"
-              fill="none"
-              stroke={SEVERITY_COLORS.critical}
-              strokeWidth="5"
-              strokeDasharray={C}
-              strokeDashoffset={offset}
-              strokeLinecap="round"
-            />
-          </svg>
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[18px] font-bold text-dark-blue dark:text-white">
-            {score}
-          </div>
-        </div>
-        <div className="text-[9px] font-semibold text-dark-blue dark:text-white">
-          ▲ 4 <span className="font-normal opacity-60">vs last week</span>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-export function CriticalHighCard() {
-  return (
-    <Card title="Critical & High">
-      <div className="flex flex-1 items-center justify-center min-h-0">
-        <div className="flex w-full items-center justify-around">
-          <div className="text-center">
-            <span className="block text-[18px] font-bold" style={{ color: SEVERITY_COLORS.critical }}>
-              38
-            </span>
-            <span className="text-[9px] font-semibold" style={{ color: SEVERITY_COLORS.critical }}>
-              ▲ 5
-            </span>
-          </div>
-          <div className="h-6 w-px bg-grey5 dark:bg-white/10" />
-          <div className="text-center">
-            <span className="block text-[18px] font-bold" style={{ color: SEVERITY_COLORS.high }}>
-              124
-            </span>
-            <span className="text-[9px] font-semibold text-dark-blue dark:text-white">▼ 12</span>
-          </div>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-export function SlaBreachCard() {
-  const rows = [
-    { label: 'Critical', value: '31%', color: SEVERITY_COLORS.critical },
-    { label: 'High', value: '24%', color: SEVERITY_COLORS.high },
-    { label: 'Medium', value: '12%', color: SEVERITY_COLORS.medium },
-  ];
-  return (
-    <Card title="SLA Breach Rate">
-      <div className="flex flex-1 flex-col min-h-0">
-        <div className="mb-1 w-full border-b border-grey5 pb-0.5 text-center dark:border-white/10">
-          <div className="text-[16px] font-bold" style={{ color: SEVERITY_COLORS.slaBreach }}>
-            21.4%
-          </div>
-        </div>
-        <div className="grid w-full flex-1 content-around">
-          {rows.map((r) => (
-            <div key={r.label} className="flex items-center justify-between border-b border-grey5/60 py-0.5 dark:border-white/5">
-              <span className="text-[7px] font-semibold uppercase" style={{ color: r.color }}>
-                {r.label}
-              </span>
-              <span className="text-[10px] font-bold" style={{ color: r.color }}>
-                {r.value}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-export function DiscoveryRateCard() {
-  return (
-    <Card title="Discovery Rate">
-      <div className="flex flex-1 flex-col min-h-0">
-        <div className="text-center">
-          <div className="text-[18px] font-bold text-dark-blue dark:text-white leading-tight">+12.8%</div>
-          <div className="text-[8px] font-semibold mb-1" style={{ color: SEVERITY_COLORS.brand }}>
-            ▲ Weekly Trend
-          </div>
-        </div>
-        <div className="grid w-full flex-1 content-around">
-          <div className="flex items-center justify-between border-b border-grey5/60 py-0.5 dark:border-white/5">
-            <span className="text-[7px] font-semibold uppercase text-grey2 dark:text-light-blue/70">New</span>
-            <span className="text-[10px] font-bold text-dark-blue dark:text-white">412</span>
-          </div>
-          <div className="flex items-center justify-between border-b border-grey5/60 py-0.5 dark:border-white/5">
-            <span className="text-[7px] font-semibold uppercase text-grey2 dark:text-light-blue/70">Fixed</span>
-            <span className="text-[10px] font-bold text-dark-blue dark:text-white">385</span>
-          </div>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-export function AssetCoverageCard() {
-  const [period, setPeriod] = useState<'month' | 'quarter'>('month');
-  const data = DASHBOARD_DATA.coverage[period];
-
-  return (
-    <Card title="Asset Coverage">
-      <ToggleGroup
-        options={[
-          { value: 'month', label: 'Monthly' },
-          { value: 'quarter', label: 'Quarterly' },
-        ]}
-        value={period}
-        onChange={setPeriod}
-      />
-      <div className="flex flex-1 flex-col min-h-0">
-        <div className="text-center text-[18px] font-bold leading-tight" style={{ color: SEVERITY_COLORS.brand }}>
-          {data.val}
-        </div>
-        <div className="grid w-full flex-1 content-around mt-1">
-          <div className="flex items-center justify-between border-b border-grey5/60 py-0.5 dark:border-white/5">
-            <span className="text-[7px] font-semibold uppercase text-grey2 dark:text-light-blue/70">Apps</span>
-            <span className="text-[10px] font-bold text-dark-blue dark:text-white">{data.app}</span>
-          </div>
-          <div className="flex items-center justify-between border-b border-grey5/60 py-0.5 dark:border-white/5">
-            <span className="text-[7px] font-semibold uppercase text-grey2 dark:text-light-blue/70">Servers</span>
-            <span className="text-[10px] font-bold text-dark-blue dark:text-white">{data.srv}</span>
-          </div>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-export function AssetsAtRiskCard() {
-  const [source, setSource] = useState<'internet' | 'intranet'>('internet');
-  const data = DASHBOARD_DATA.riskAssets[source];
-
-  const rows = [
-    { label: 'Critical', value: data.crit, color: SEVERITY_COLORS.critical },
-    { label: 'High', value: data.high, color: SEVERITY_COLORS.high },
-    { label: 'Medium', value: data.med, color: SEVERITY_COLORS.medium },
-  ];
-
-  return (
-    <Card title="Assets at Risk">
-      <ToggleGroup
-        options={[
-          { value: 'internet', label: 'Internet' },
-          { value: 'intranet', label: 'Intranet' },
-        ]}
-        value={source}
-        onChange={setSource}
-      />
-      <div className="flex flex-1 flex-col justify-around min-h-0">
-        {rows.map((row) => (
-          <div key={row.label} className="w-full">
-            <div className="mb-0.5 flex items-end justify-between">
-              <span className="text-[7px] font-semibold uppercase" style={{ color: row.color }}>
-                {row.label}
-              </span>
-              <span className="text-[9px] font-bold text-dark-blue dark:text-white">
-                {row.value}/{data.total}
-              </span>
-            </div>
-            <div className="h-1 w-full rounded border border-grey5 bg-grey5/40 dark:border-white/10 dark:bg-[#060B28]">
-              <div
-                className="h-full rounded transition-all duration-700"
-                style={{ width: `${(row.value / data.total) * 100}%`, backgroundColor: row.color }}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-/* ============================================================================
- * ACTIONS TILE  — two stacked buttons in row 1 slot 7
- * ========================================================================== */
-
-export function ActionsTile({
-  onAddChart,
-  onAskAI,
-}: {
-  onAddChart: () => void;
-  onAskAI: () => void;
-}) {
-  return (
-    <div className="flex min-h-0 min-w-0 flex-col gap-1.5 rounded-lg border border-grey5 bg-white p-1.5 shadow-sm dark:border-white/10 dark:bg-[#111C44]">
-      {/* Add Chart - top half */}
-      <button
-        type="button"
-        onClick={onAddChart}
-        className="group flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-dashed border-kpmg-default/40 bg-kpmg-default/5 transition-all hover:border-kpmg-default hover:bg-kpmg-default/10 dark:border-light-blue/30 dark:bg-light-blue/5 dark:hover:border-light-blue dark:hover:bg-light-blue/10"
-      >
-        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-kpmg-default/15 text-kpmg-default transition-transform group-hover:scale-110 dark:bg-light-blue/20 dark:text-light-blue">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-        </div>
-        <span className="text-[9px] font-bold uppercase tracking-wider text-kpmg-default dark:text-light-blue">
-          Add Chart
-        </span>
-      </button>
-
-      {/* Ask AI - bottom half */}
-      <button
-        type="button"
-        onClick={onAskAI}
-        className="group flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-dashed border-purple/40 bg-purple/5 transition-all hover:border-purple hover:bg-purple/10 dark:border-light-purple/40 dark:bg-light-purple/5 dark:hover:border-light-purple dark:hover:bg-light-purple/10"
-      >
-        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-purple/15 text-purple transition-transform group-hover:scale-110 dark:bg-light-purple/20 dark:text-light-purple">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 2 L13.5 8.5 L20 10 L13.5 11.5 L12 18 L10.5 11.5 L4 10 L10.5 8.5 Z" />
-            <path d="M19 3 L19.5 5 L21.5 5.5 L19.5 6 L19 8 L18.5 6 L16.5 5.5 L18.5 5 Z" />
-          </svg>
-        </div>
-        <span className="text-[9px] font-bold uppercase tracking-wider text-purple dark:text-light-purple">
-          Ask AI
-        </span>
-      </button>
-    </div>
-  );
-}
-
-/* ============================================================================
- * ROW 2 - LARGER CARDS
- * ========================================================================== */
-
-export function TeamPerformanceCard() {
-  const [filter, setFilter] = useState('');
-  const theme = useChartTheme();
-
-  const filtered = useMemo(
-    () => DASHBOARD_DATA.teams.filter((t) => t.name.toLowerCase().includes(filter.toLowerCase())),
-    [filter],
-  );
-
-  const data = {
-    labels: filtered.map((t) => t.name),
-    datasets: [
-      {
-        type: 'bar' as const,
-        label: 'Breach %',
-        data: filtered.map((t) => t.breach),
-        backgroundColor: SEVERITY_COLORS.slaBreach,
-        yAxisID: 'y',
-      },
-      {
-        type: 'line' as const,
-        label: 'MTTR',
-        data: filtered.map((t) => t.mttr),
-        borderColor: SEVERITY_COLORS.brand,
-        backgroundColor: SEVERITY_COLORS.brand,
-        yAxisID: 'y1',
-        pointRadius: 3,
-      },
-    ],
-  };
-
-  const options = {
-    maintainAspectRatio: false,
-    responsive: true,
-    scales: {
-      y: { grid: { color: theme.grid }, ticks: { color: theme.text, font: { size: 9 } } },
-      y1: { position: 'right' as const, grid: { display: false }, ticks: { color: theme.text, font: { size: 9 } } },
-      x: { grid: { display: false }, ticks: { color: theme.text, font: { size: 9 } } },
-    },
-    plugins: {
-      legend: { labels: { color: theme.text, boxWidth: 10, font: { size: 9 } } },
-      datalabels: { display: false },
-    },
-  };
-
-  return (
-    <Card title="Team Performance (Breach % vs MTTR)">
-      <input
-        type="text"
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        placeholder="Filter teams..."
-        className="mb-1.5 w-full rounded border border-grey5 bg-white px-2 py-1 text-[10px] text-dark-blue outline-none focus:border-kpmg-default dark:border-white/10 dark:bg-[#060B28] dark:text-white"
-      />
-      <div className="relative flex-1 min-h-0">
-        <Chart type="bar" data={data} options={options} />
-      </div>
-    </Card>
-  );
-}
-
-export function HeatmapCard() {
-  const [filter, setFilter] = useState('');
-  const filtered = useMemo(
-    () => DASHBOARD_DATA.teams.filter((t) => t.name.toLowerCase().includes(filter.toLowerCase())),
-    [filter],
-  );
-
-  const headerCls =
-    'sticky top-0 bg-grey5/40 px-1 py-1 text-[8px] font-bold uppercase text-grey2 dark:bg-white/5 dark:text-light-blue/60';
-  const cellCls = 'rounded p-1 text-center text-[10px] font-semibold text-dark-blue dark:text-white';
-
-  return (
-    <Card title="Vulnerability Heatmap">
-      <input
-        type="text"
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        placeholder="Search teams..."
-        className="mb-1.5 w-full rounded border border-grey5 bg-white px-2 py-1 text-[10px] text-dark-blue outline-none focus:border-kpmg-default dark:border-white/10 dark:bg-[#060B28] dark:text-white"
-      />
-      <div className="flex-1 overflow-auto min-h-0">
-        <table className="w-full table-fixed border-separate" style={{ borderSpacing: '2px' }}>
-          <thead>
-            <tr>
-              <th className={headerCls}>Team</th>
-              <th className={headerCls}>Crit</th>
-              <th className={headerCls}>High</th>
-              <th className={headerCls}>Med</th>
-              <th className={headerCls}>Low</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((t) => (
-              <tr key={t.name}>
-                <td className="sticky left-0 rounded bg-white p-1 text-left text-[10px] font-semibold text-dark-blue dark:bg-[#111C44] dark:text-white">
-                  {t.name}
-                </td>
-                <td className={cellCls} style={{ backgroundColor: `rgba(253, 52, 156, ${t.crit / 20 + 0.1})` }}>
-                  {t.crit}
-                </td>
-                <td className={cellCls} style={{ backgroundColor: `rgba(114, 19, 234, ${t.high / 60 + 0.1})` }}>
-                  {t.high}
-                </td>
-                <td className={cellCls} style={{ backgroundColor: `rgba(30, 73, 226, ${t.med / 100 + 0.1})` }}>
-                  {t.med}
-                </td>
-                <td
-                  className="rounded p-1 text-center text-[10px] font-semibold"
-                  style={{ backgroundColor: 'rgba(0, 184, 245, 0.15)', color: SEVERITY_COLORS.low }}
-                >
-                  {t.low}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Card>
-  );
-}
-
-export function DiscoveryTrendsCard() {
-  const [period, setPeriod] = useState<'monthly' | 'quarterly'>('monthly');
-  const theme = useChartTheme();
-  const trend = DASHBOARD_DATA.trends[period];
-
-  const data = {
-    labels: trend.labels,
-    datasets: [
-      { label: 'Critical', data: trend.crit, backgroundColor: SEVERITY_COLORS.critical },
-      { label: 'High', data: trend.high, backgroundColor: SEVERITY_COLORS.high },
-      { label: 'Medium', data: trend.med, backgroundColor: SEVERITY_COLORS.medium },
-    ],
-  };
-
-  const options = {
-    maintainAspectRatio: false,
-    responsive: true,
-    layout: { padding: { top: 14 } },
-    scales: {
-      x: { stacked: true, grid: { display: false }, ticks: { color: theme.text, font: { size: 9 } } },
-      y: { stacked: true, grid: { color: theme.grid }, ticks: { color: theme.text, font: { size: 9 } } },
-    },
-    plugins: {
-      legend: { display: false },
-      datalabels: {
-        color: theme.text,
-        anchor: 'end' as const,
-        align: 'top' as const,
-        font: { weight: 700 as const, size: 8 },
-        formatter: (_v: number, ctx: any) => {
-          const ds = ctx.chart.data.datasets;
-          if (ctx.datasetIndex === ds.length - 1) {
-            return ds.reduce((s: number, d: any) => s + d.data[ctx.dataIndex], 0);
-          }
-          return null;
-        },
-      },
-    },
-  };
-
-  return (
-    <Card title="Discovery Trends">
-      <ToggleGroup
-        options={[
-          { value: 'monthly', label: 'Monthly' },
-          { value: 'quarterly', label: 'Quarterly' },
-        ]}
-        value={period}
-        onChange={setPeriod}
-      />
-      <div className="relative flex-1 min-h-0">
-        <Bar data={data} options={options} />
-      </div>
-    </Card>
-  );
-}
-
-/* ============================================================================
- * ROW 3 - SMALLER CHART CARDS
- * ========================================================================== */
-
-export function RecurrenceCard() {
-  const theme = useChartTheme();
-  const data = {
-    labels: DASHBOARD_DATA.recurrence.labels,
-    datasets: [
-      {
-        data: DASHBOARD_DATA.recurrence.rates,
-        backgroundColor: [
-          SEVERITY_COLORS.critical,
-          SEVERITY_COLORS.high,
-          SEVERITY_COLORS.medium,
-          SEVERITY_COLORS.low,
-        ],
-        borderRadius: 4,
-      },
-    ],
-  };
-  const options = {
-    indexAxis: 'y' as const,
-    maintainAspectRatio: false,
-    responsive: true,
-    layout: { padding: { right: 30 } },
-    scales: {
-      x: {
-        grid: { color: theme.grid },
-        ticks: { color: theme.text, font: { size: 9 }, callback: (v: any) => v + '%' },
-        max: 100,
-      },
-      y: { grid: { display: false }, ticks: { color: theme.text, font: { size: 9 } } },
-    },
-    plugins: {
-      legend: { display: false },
-      datalabels: {
-        color: theme.text,
-        anchor: 'end' as const,
-        align: 'right' as const,
-        offset: 2,
-        font: { weight: 700 as const, size: 9 },
-        formatter: (v: number) => v + '%',
-      },
-    },
-  };
-  return (
-    <Card title="Recurrence Rate (%)">
-      <div className="relative flex-1 min-h-0">
-        <Bar data={data} options={options} />
-      </div>
-    </Card>
-  );
-}
-
-export function AgingCard() {
-  const theme = useChartTheme();
-  const a = DASHBOARD_DATA.aging;
-  const data = {
-    labels: a.labels,
-    datasets: [
-      { label: 'Critical', data: a.crit, backgroundColor: SEVERITY_COLORS.critical },
-      { label: 'High', data: a.high, backgroundColor: SEVERITY_COLORS.high },
-      { label: 'Medium', data: a.med, backgroundColor: SEVERITY_COLORS.medium },
-    ],
-  };
-  const options = {
-    indexAxis: 'y' as const,
-    maintainAspectRatio: false,
-    responsive: true,
-    layout: { padding: { right: 30 } },
-    scales: {
-      x: { stacked: true, grid: { color: theme.grid }, ticks: { color: theme.text, font: { size: 9 } } },
-      y: { stacked: true, grid: { display: false }, ticks: { color: theme.text, font: { size: 9 } } },
-    },
-    plugins: {
-      legend: { display: false },
-      datalabels: {
-        color: theme.text,
-        anchor: 'end' as const,
-        align: 'right' as const,
-        font: { weight: 700 as const, size: 9 },
-        formatter: (_v: number, ctx: any) => {
-          const ds = ctx.chart.data.datasets;
-          if (ctx.datasetIndex === ds.length - 1) {
-            return ds.reduce((s: number, d: any) => s + d.data[ctx.dataIndex], 0);
-          }
-          return null;
-        },
-      },
-    },
-  };
-  return (
-    <Card title="Aging Buckets">
-      <div className="relative flex-1 min-h-0">
-        <Bar data={data} options={options} />
-      </div>
-    </Card>
-  );
-}
-
-export function TestTypeCard() {
-  const theme = useChartTheme();
-  const t = DASHBOARD_DATA.testType;
-  const data = {
-    labels: t.labels,
-    datasets: [
-      { label: 'Critical', data: t.crit, backgroundColor: SEVERITY_COLORS.critical },
-      { label: 'High', data: t.high, backgroundColor: SEVERITY_COLORS.high },
-    ],
-  };
-  const options = {
-    maintainAspectRatio: false,
-    responsive: true,
-    layout: { padding: { top: 14 } },
-    scales: {
-      x: { stacked: true, grid: { display: false }, ticks: { color: theme.text, font: { size: 9 } } },
-      y: { stacked: true, grid: { color: theme.grid }, ticks: { color: theme.text, font: { size: 9 } } },
-    },
-    plugins: {
-      legend: { display: false },
-      datalabels: {
-        color: theme.text,
-        anchor: 'end' as const,
-        align: 'top' as const,
-        font: { weight: 700 as const, size: 8 },
-        formatter: (_v: number, ctx: any) => {
-          const ds = ctx.chart.data.datasets;
-          if (ctx.datasetIndex === ds.length - 1) {
-            return ds.reduce((s: number, d: any) => s + d.data[ctx.dataIndex], 0);
-          }
-          return null;
-        },
-      },
-    },
-  };
-  return (
-    <Card title="Findings by Origin">
-      <div className="relative flex-1 min-h-0">
-        <Bar data={data} options={options} />
-      </div>
-    </Card>
-  );
-}
-
-export function ExposureCard() {
-  const theme = useChartTheme();
-  const e = DASHBOARD_DATA.exposure;
-  const data = {
-    labels: e.labels,
-    datasets: [
-      { label: 'Open', data: e.open, borderColor: SEVERITY_COLORS.critical, backgroundColor: SEVERITY_COLORS.critical, tension: 0.4, pointRadius: 2 },
-      { label: 'Closed', data: e.closed, borderColor: SEVERITY_COLORS.brand, backgroundColor: SEVERITY_COLORS.brand, tension: 0.4, pointRadius: 2 },
-    ],
-  };
-  const options = {
-    maintainAspectRatio: false,
-    responsive: true,
-    scales: {
-      x: { grid: { display: false }, ticks: { color: theme.text, font: { size: 9 } } },
-      y: { grid: { color: theme.grid }, ticks: { color: theme.text, font: { size: 9 } } },
-    },
-    plugins: { legend: { display: false }, datalabels: { display: false } },
-  };
-  return (
-    <Card title="Open vs Closed Velocity">
-      <div className="relative flex-1 min-h-0">
-        <Line data={data} options={options} />
-      </div>
-      <div className="mt-1 flex flex-shrink-0 justify-center gap-1.5">
-        <div
-          className="rounded px-1.5 py-0.5 text-[8px] font-semibold"
-          style={{ backgroundColor: 'rgba(253, 52, 156, 0.12)', color: SEVERITY_COLORS.critical }}
-        >
-          Reported: 650
-        </div>
-        <div
-          className="rounded px-1.5 py-0.5 text-[8px] font-semibold"
-          style={{ backgroundColor: 'rgba(0, 51, 141, 0.12)', color: SEVERITY_COLORS.brand }}
-        >
-          Resolved: 641
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-/* ============================================================================
- * CHART VIEW — shared chart renderer used by CustomChartCard and chat preview
- * ========================================================================== */
-
-export function ChartView({ config }: { config: CustomChartConfig | MockChartTemplate }) {
-  const theme = useChartTheme();
-  const source = DATA_SOURCES[config.source];
-  const series = source.series.filter((s) => config.selectedSeries.includes(s.key));
-
-  if (series.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center text-[10px] text-grey3 dark:text-light-blue/60">
-        No data selected
-      </div>
-    );
-  }
-
-  const isCircular = config.chartKind === 'pie' || config.chartKind === 'doughnut';
-  const transposed = config.xAxisField === 'series';
-
-  // ----- Build data based on xAxisField (transposition) -----
-  let chartData: any;
-
-  if (isCircular) {
-    if (transposed) {
-      chartData = {
-        labels: series.map((s) => s.label),
-        datasets: [
-          {
-            data: series.map((s) => s.values.reduce((a, b) => a + b, 0)),
-            backgroundColor: series.map((s) => s.color),
-            borderWidth: 1,
-            borderColor: theme.isDark ? '#111C44' : '#FFFFFF',
-          },
-        ],
-      };
-    } else {
-      chartData = {
-        labels: source.labels,
-        datasets: [
-          {
-            data: source.labels.map((_, i) =>
-              series.reduce((sum, s) => sum + s.values[i], 0),
-            ),
-            backgroundColor: source.labels.map((_, i) => PALETTE[i % PALETTE.length]),
-            borderWidth: 1,
-            borderColor: theme.isDark ? '#111C44' : '#FFFFFF',
-          },
-        ],
-      };
-    }
-  } else if (transposed) {
-    chartData = {
-      labels: series.map((s) => s.label),
-      datasets: source.labels.map((label, i) => ({
-        label,
-        data: series.map((s) => s.values[i]),
-        backgroundColor: PALETTE[i % PALETTE.length],
-        borderColor: PALETTE[i % PALETTE.length],
-        tension: 0.4,
-        pointRadius: 2,
-        fill: false,
-      })),
-    };
-  } else {
-    chartData = {
-      labels: source.labels,
-      datasets: series.map((s) => ({
-        label: s.label,
-        data: s.values,
-        backgroundColor: s.color,
-        borderColor: s.color,
-        tension: 0.4,
-        pointRadius: 2,
-        fill: false,
-      })),
-    };
-  }
-
-  // ----- Options -----
-  const baseOptions: any = {
-    maintainAspectRatio: false,
-    responsive: true,
-    plugins: {
-      legend: {
-        display: true,
-        position: 'bottom' as const,
-        labels: { color: theme.text, font: { size: 9 }, boxWidth: 8, padding: 4 },
-      },
-      datalabels: { display: false },
-    },
-  };
-
-  if (!isCircular) {
-    const stacked = config.chartKind === 'stacked-bar';
-    baseOptions.scales = {
-      x: {
-        stacked,
-        grid: { display: false },
-        ticks: { color: theme.text, font: { size: 9 } },
-      },
-      y: {
-        stacked,
-        grid: { color: theme.grid },
-        ticks: { color: theme.text, font: { size: 9 } },
-      },
-    };
-    if (config.swapAxes) {
-      baseOptions.indexAxis = 'y';
-    }
-  }
-
-  switch (config.chartKind) {
-    case 'line':
-      return <Line data={chartData} options={baseOptions} />;
-    case 'pie':
-      return <Pie data={chartData} options={baseOptions} />;
-    case 'doughnut':
-      return <Doughnut data={chartData} options={baseOptions} />;
-    case 'bar':
-    case 'stacked-bar':
-    default:
-      return <Bar data={chartData} options={baseOptions} />;
-  }
-}
-
-/* ============================================================================
- * CUSTOM CHART CARD - thin wrapper around ChartView
- * ========================================================================== */
-
-export function CustomChartCard({
-  config,
-  onRemove,
-}: {
-  config: CustomChartConfig;
-  onRemove: () => void;
-}) {
-  const removeBtn = (
-    <button
-      onClick={onRemove}
-      className="cursor-pointer text-[11px] text-grey3 transition-colors hover:text-pink dark:text-light-blue/60 dark:hover:text-pink"
-      aria-label="Remove chart"
-      title="Remove chart"
-    >
-      ✕
-    </button>
-  );
-
-  return (
-    <Card title={config.title} headerRight={removeBtn}>
-      <div className="relative flex-1 min-h-0">
-        <ChartView config={config} />
-      </div>
-    </Card>
-  );
-}
-
-/* ============================================================================
- * CHART KIND TILES (for the modal)
- * ========================================================================== */
-
-const CHART_KIND_OPTIONS: Array<{ value: ChartKind; label: string; icon: React.ReactNode }> = [
-  {
-    value: 'bar',
-    label: 'Bar',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="4" y="12" width="3.5" height="8" rx="0.5" />
-        <rect x="10.25" y="7" width="3.5" height="13" rx="0.5" />
-        <rect x="16.5" y="3" width="3.5" height="17" rx="0.5" />
-      </svg>
-    ),
-  },
-  {
-    value: 'stacked-bar',
-    label: 'Stacked',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="4" y="14" width="4" height="6" rx="0.5" />
-        <rect x="4" y="9" width="4" height="4" rx="0.5" />
-        <rect x="10" y="11" width="4" height="9" rx="0.5" />
-        <rect x="10" y="6" width="4" height="4" rx="0.5" />
-        <rect x="16" y="8" width="4" height="12" rx="0.5" />
-        <rect x="16" y="3" width="4" height="4" rx="0.5" />
-      </svg>
-    ),
-  },
-  {
-    value: 'line',
-    label: 'Line',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="3 17 8 12 13 15 21 6" />
-        <circle cx="3" cy="17" r="1.2" fill="currentColor" />
-        <circle cx="8" cy="12" r="1.2" fill="currentColor" />
-        <circle cx="13" cy="15" r="1.2" fill="currentColor" />
-        <circle cx="21" cy="6" r="1.2" fill="currentColor" />
-      </svg>
-    ),
-  },
-  {
-    value: 'pie',
-    label: 'Pie',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="9" />
-        <path d="M12 3 L12 12 L21 12" />
-        <path d="M12 12 L4 17" />
-      </svg>
-    ),
-  },
-  {
-    value: 'doughnut',
-    label: 'Doughnut',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="9" />
-        <circle cx="12" cy="12" r="4" />
-        <path d="M12 3 L12 8" />
-        <path d="M21 12 L16 12" />
-      </svg>
-    ),
-  },
-];
-
-/* ============================================================================
- * CHART BUILDER MODAL
- * ========================================================================== */
-
-export function ChartBuilderModal({
-  open,
-  onClose,
-  onCreate,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onCreate: (cfg: CustomChartConfig) => void;
-}) {
-  const [title, setTitle] = useState('My Custom Chart');
-  const [source, setSource] = useState<DataSourceKey>('teams');
-  const [chartKind, setChartKind] = useState<ChartKind>('bar');
-  const [selected, setSelected] = useState<DatasetKey[]>([]);
-  const [xAxisField, setXAxisField] = useState<XAxisField>('labels');
-  const [swapAxes, setSwapAxes] = useState(false);
-
-  // Reset selections + axis when source changes
-  useEffect(() => {
-    setSelected([]);
-    setXAxisField('labels');
-  }, [source]);
-
-  // Lock body scroll
-  useEffect(() => {
-    if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [open]);
-
-  if (!open) return null;
-
-  const sourceDef = DATA_SOURCES[source];
-  const isCircular = chartKind === 'pie' || chartKind === 'doughnut';
-
-  const toggleSeries = (key: DatasetKey) => {
-    setSelected((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
-  };
-
-  const canCreate = selected.length > 0 && title.trim().length > 0;
-
-  const handleCreate = () => {
-    if (!canCreate) return;
-    onCreate({
-      id: `custom-${Date.now()}`,
-      title: title.trim(),
-      source,
-      chartKind,
-      selectedSeries: selected,
-      xAxisField,
-      swapAxes,
-    });
-    setTitle('My Custom Chart');
-    setSelected([]);
-    setXAxisField('labels');
-    setSwapAxes(false);
-    onClose();
-  };
-
-  // X-axis options derived from the source
-  const xAxisOptions: Array<{ value: XAxisField; label: string; description: string }> = [
-    {
-      value: 'labels',
-      label: sourceDef.labelAxisName,
-      description: 'Default — group data by source labels',
-    },
-    {
-      value: 'series',
-      label: sourceDef.seriesAxisName,
-      description: 'Transpose — group data by selected series',
-    },
-  ];
-
-  const sourceOptions = (Object.keys(DATA_SOURCES) as DataSourceKey[]).map((k) => ({
-    value: k,
-    label: DATA_SOURCES[k].name,
-  }));
-
-  return (
-    <div
-      className="fixed inset-0 !z-[9999] flex items-center justify-center bg-dark-blue/50 p-4 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-[#111C44]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-start justify-between border-b border-grey5 px-6 py-4 dark:border-white/10">
-          <div>
-            <h2 className="text-base font-bold text-dark-blue dark:text-white">
-              Build a Custom Chart
-            </h2>
-            <p className="mt-0.5 text-xs font-normal text-grey2 dark:text-light-blue/60">
-              Choose your data, the X-axis, chart type, and series.
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="ml-4 flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-grey2 transition-colors hover:bg-grey5/40 hover:text-dark-blue dark:text-light-blue/60 dark:hover:bg-white/5 dark:hover:text-white"
-            aria-label="Close"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5">
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-            {/* LEFT COLUMN */}
-            <div className="space-y-5">
-              {/* Title */}
-              <div>
-                <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-grey2 dark:text-light-blue/70">
-                  Chart Title
-                </label>
-                <input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Untitled chart"
-                  className="w-full rounded-lg border border-grey5 bg-grey5/20 px-3 py-2 text-sm text-dark-blue outline-none transition-colors focus:border-kpmg-default focus:bg-white dark:border-white/10 dark:bg-[#060B28] dark:text-white dark:focus:bg-[#0F172A]"
-                />
-              </div>
-
-              {/* Data Source */}
-              <div>
-                <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-grey2 dark:text-light-blue/70">
-                  Data Source
-                </label>
-                <Dropdown<DataSourceKey>
-                  options={sourceOptions}
-                  value={source}
-                  onChange={setSource}
-                />
-              </div>
-
-              {/* X-Axis */}
-              <div>
-                <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-grey2 dark:text-light-blue/70">
-                  X-Axis
-                </label>
-                <Dropdown<XAxisField>
-                  options={xAxisOptions}
-                  value={xAxisField}
-                  onChange={setXAxisField}
-                />
-              </div>
-
-              {/* Chart Type */}
-              <div>
-                <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-grey2 dark:text-light-blue/70">
-                  Chart Type
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {CHART_KIND_OPTIONS.map((opt) => {
-                    const active = opt.value === chartKind;
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => setChartKind(opt.value)}
-                        className={`group flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border p-3 transition-all ${
-                          active
-                            ? 'border-kpmg-default bg-kpmg-default/10 text-kpmg-default shadow-sm dark:border-light-blue dark:bg-light-blue/10 dark:text-light-blue'
-                            : 'border-grey5 bg-white text-grey1 hover:border-kpmg-default/40 hover:bg-grey5/30 dark:border-white/10 dark:bg-[#060B28] dark:text-light-blue/70 dark:hover:border-light-blue/40 dark:hover:bg-white/5'
-                        }`}
-                      >
-                        <div className="h-6 w-6">{opt.icon}</div>
-                        <span className="text-[10px] font-bold">{opt.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Swap Axes */}
-              
-            </div>
-
-            {/* RIGHT COLUMN — Series Picker */}
-            <div>
-              <label className="mb-1.5 flex items-center justify-between text-[11px] font-bold uppercase tracking-wide text-grey2 dark:text-light-blue/70">
-                <span>Data Points</span>
-                <span className="rounded-full bg-grey5/40 px-2 py-0.5 text-[10px] font-medium normal-case text-grey1 dark:bg-white/10 dark:text-light-blue">
-                  {selected.length} selected
-                </span>
-              </label>
-              <div className="max-h-[420px] space-y-1 overflow-y-auto rounded-lg border border-grey5 bg-grey5/10 p-1.5 dark:border-white/10 dark:bg-[#060B28]/50">
-                {sourceDef.series.map((s) => {
-                  const checked = selected.includes(s.key);
-                  return (
-                    <button
-                      key={s.key}
-                      type="button"
-                      onClick={() => toggleSeries(s.key)}
-                      className={`flex w-full cursor-pointer items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${
-                        checked
-                          ? 'bg-white shadow-sm dark:bg-[#0F172A]'
-                          : 'hover:bg-white/60 dark:hover:bg-white/5'
-                      }`}
-                    >
-                      <div
-                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
-                          checked
-                            ? 'border-kpmg-default bg-kpmg-default'
-                            : 'border-grey5 bg-white dark:border-white/20 dark:bg-transparent'
-                        }`}
-                      >
-                        {checked && (
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                        )}
-                      </div>
-                      <span className="h-3 w-3 shrink-0 rounded" style={{ backgroundColor: s.color }} />
-                      <span className="flex-1 text-sm font-medium text-dark-blue dark:text-white">
-                        {s.label}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              {selected.length === 0 && (
-                <p className="mt-2 text-[10px] font-medium text-pink">
-                  Select at least one data point to enable the chart.
-                </p>
-              )}
-              <div>
-                <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-grey2 dark:text-light-blue/70">
-                  Orientation
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setSwapAxes((v) => !v)}
-                  disabled={isCircular}
-                  className={`flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg border px-3 py-2 transition-all ${
-                    isCircular
-                      ? 'cursor-not-allowed border-grey5 bg-grey5/20 opacity-50 dark:border-white/10 dark:bg-[#060B28]'
-                      : swapAxes
-                      ? 'border-kpmg-default bg-kpmg-default/10 text-kpmg-default shadow-sm dark:border-light-blue dark:bg-light-blue/10 dark:text-light-blue'
-                      : 'border-grey5 bg-grey5/20 text-dark-blue hover:border-kpmg-default/40 hover:bg-white dark:border-white/10 dark:bg-[#060B28] dark:text-white dark:hover:border-light-blue/40 dark:hover:bg-[#0F172A]'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="17 1 21 5 17 9" />
-                      <path d="M3 11V9a4 4 0 0 1 4-4h14" />
-                      <polyline points="7 23 3 19 7 15" />
-                      <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-                    </svg>
-                    <span className="text-sm font-medium">Swap X ↔ Y</span>
-                  </div>
-                  <span
-                    className={`relative inline-flex h-4 w-7 shrink-0 rounded-full transition-colors ${
-                      swapAxes && !isCircular
-                        ? 'bg-kpmg-default dark:bg-light-blue'
-                        : 'bg-grey5 dark:bg-white/15'
-                    }`}
-                  >
-                    <span
-                      className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform ${
-                        swapAxes && !isCircular ? 'translate-x-3.5' : 'translate-x-0.5'
-                      }`}
-                    />
-                  </span>
-                </button>
-                {isCircular && (
-                  <p className="mt-1.5 text-[10px] text-grey2 dark:text-light-blue/60">
-                    Not applicable for pie / doughnut charts.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-2 border-t border-grey5 px-6 py-3 dark:border-white/10">
-          <button
-            onClick={onClose}
-            className="cursor-pointer rounded-lg px-4 py-2 text-sm font-semibold text-grey1 transition-colors hover:bg-grey5/40 dark:text-light-blue/80 dark:hover:bg-white/5"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleCreate}
-            disabled={!canCreate}
-            className="cursor-pointer rounded-lg bg-kpmg-default px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:opacity-90 hover:shadow disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
-          >
-            Add Chart
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ============================================================================
- * CHAT PANEL — slide-in from right, mock AI assistant
- * ========================================================================== */
-
-interface ChatMessage {
-  id: string;
-  role: 'user' | 'bot';
-  text?: string;
-  insight?: string;
-  chart?: MockChartTemplate;
-  added?: boolean; // tracks whether the chart in this msg has been added to dashboard
-}
-
-const FALLBACK_INSIGHT =
-  "I'm not sure how to interpret that. Try asking about teams, severity trends, SLA breaches, vulnerability ages, or scan origins. You can also pick a starter prompt below.";
-
-export function ChatPanel({
-  open,
-  onClose,
-  onAddChart,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onAddChart: (cfg: CustomChartConfig) => void;
-}) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState('');
-  const [typing, setTyping] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  // Auto-scroll to bottom on new messages
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, typing]);
-
-  // Esc closes the panel
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [open, onClose]);
-
-  const send = (text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-
-    const userMsg: ChatMessage = {
-      id: `u-${Date.now()}`,
-      role: 'user',
-      text: trimmed,
-    };
-    setMessages((prev) => [...prev, userMsg]);
-    setInput('');
-    setTyping(true);
-
-    // Simulate bot thinking time
-    setTimeout(() => {
-      const match = findMockMatch(trimmed);
-      const botMsg: ChatMessage = match
-        ? {
-            id: `b-${Date.now()}`,
-            role: 'bot',
-            insight: match.insight,
-            chart: match.chart,
-          }
-        : {
-            id: `b-${Date.now()}`,
-            role: 'bot',
-            insight: FALLBACK_INSIGHT,
-          };
-      setMessages((prev) => [...prev, botMsg]);
-      setTyping(false);
-    }, 600);
-  };
-
-  const handleAddToDashboard = (msgId: string, chart: MockChartTemplate) => {
-    onAddChart({
-      id: `custom-${Date.now()}`,
-      title: chart.title,
-      source: chart.source,
-      chartKind: chart.chartKind,
-      selectedSeries: chart.selectedSeries,
-      xAxisField: chart.xAxisField,
-      swapAxes: chart.swapAxes,
-    });
-    setMessages((prev) =>
-      prev.map((m) => (m.id === msgId ? { ...m, added: true } : m)),
-    );
-  };
-
-  const handleStarter = (prompt: string) => send(prompt);
-
-  return (
-    <>
-      {/* Backdrop */}
-      {open && (
-        <div
-          className="fixed !z-[9999]  inset-0 z-30 bg-dark-blue/30 backdrop-blur-[2px]"
-          onClick={onClose}
-        />
-      )}
-
-      {/* Panel */}
-      <aside
-        className={`fixed !z-[9999] inset-y-0 right-0 z-40 flex w-full max-w-[420px] transform flex-col border-l border-grey5 bg-white shadow-2xl transition-transform duration-300 dark:border-white/10 dark:bg-[#111C44] ${
-          open ? 'translate-x-0' : 'translate-x-full'
-        }`}
-        aria-hidden={!open}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-grey5 px-4 py-3 dark:border-white/10">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple/15 text-purple dark:bg-light-purple/20 dark:text-light-purple">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2 L13.5 8.5 L20 10 L13.5 11.5 L12 18 L10.5 11.5 L4 10 L10.5 8.5 Z" />
-                <path d="M19 3 L19.5 5 L21.5 5.5 L19.5 6 L19 8 L18.5 6 L16.5 5.5 L18.5 5 Z" />
-              </svg>
-            </div>
-            <div>
-              <h2 className="text-sm font-bold text-dark-blue dark:text-white">AI Assistant</h2>
-              <p className="text-[10px] font-normal text-grey2 dark:text-light-blue/60">
-                Ask about your security data
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-grey2 transition-colors hover:bg-grey5/40 hover:text-dark-blue dark:text-light-blue/60 dark:hover:bg-white/5 dark:hover:text-white"
-            aria-label="Close chat"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Messages */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
-          {messages.length === 0 ? (
-            <ChatWelcome onPick={handleStarter} />
-          ) : (
-            <div className="flex flex-col gap-3">
-              {messages.map((msg) =>
-                msg.role === 'user' ? (
-                  <UserBubble key={msg.id} text={msg.text ?? ''} />
-                ) : (
-                  <BotBubble
-                    key={msg.id}
-                    insight={msg.insight ?? ''}
-                    chart={msg.chart}
-                    added={msg.added}
-                    onAdd={() =>
-                      msg.chart && handleAddToDashboard(msg.id, msg.chart)
-                    }
-                  />
-                ),
-              )}
-              {typing && <TypingIndicator />}
-            </div>
-          )}
-        </div>
-
-        {/* Input */}
-        <div className="border-t border-grey5 p-3 dark:border-white/10">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              send(input);
-            }}
-            className="flex items-end gap-2"
-          >
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  send(input);
-                }
-              }}
-              rows={1}
-              placeholder="Ask about your data..."
-              className="flex-1 resize-none rounded-lg border border-grey5 bg-grey5/20 px-3 py-2 text-sm text-dark-blue outline-none transition-colors focus:border-kpmg-default focus:bg-white dark:border-white/10 dark:bg-[#060B28] dark:text-white dark:focus:bg-[#0F172A]"
-              style={{ minHeight: '38px', maxHeight: '100px' }}
-            />
-            <button
-              type="submit"
-              disabled={!input.trim() || typing}
-              className="flex h-[38px] w-[38px] cursor-pointer items-center justify-center rounded-lg bg-purple text-white shadow-sm transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-light-purple dark:text-dark-blue"
-              aria-label="Send"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="22" y1="2" x2="11" y2="13" />
-                <polygon points="22 2 15 22 11 13 2 9 22 2" />
-              </svg>
-            </button>
-          </form>
-        </div>
-      </aside>
-    </>
-  );
-}
-
-/* ----- Chat sub-components ----- */
-
-function ChatWelcome({ onPick }: { onPick: (prompt: string) => void }) {
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="rounded-xl bg-purple/8 p-3 dark:bg-light-purple/10">
-        <div className="text-sm font-semibold text-dark-blue dark:text-white">
-          👋 Hi there!
-        </div>
-        <div className="mt-1 text-xs font-normal text-grey1 dark:text-light-blue/80">
-          I can help you analyze your vulnerability data and build charts. Try
-          one of these to get started:
-        </div>
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <div className="text-[10px] font-bold uppercase tracking-wide text-grey2 dark:text-light-blue/60">
-          Suggested Prompts
-        </div>
-        {STARTER_PROMPTS.map((p) => (
-          <button
-            key={p}
-            onClick={() => onPick(p)}
-            className="cursor-pointer rounded-lg border border-grey5 bg-white px-3 py-2 text-left text-xs font-medium text-dark-blue transition-all hover:border-purple/50 hover:bg-purple/5 hover:shadow-sm dark:border-white/10 dark:bg-[#0F172A] dark:text-white dark:hover:border-light-purple/50 dark:hover:bg-light-purple/5"
-          >
-            {p}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function UserBubble({ text }: { text: string }) {
-  return (
-    <div className="flex justify-end">
-      <div className="max-w-[85%] rounded-2xl rounded-br-md bg-kpmg-default px-3 py-2 text-sm text-white shadow-sm">
-        {text}
-      </div>
-    </div>
-  );
-}
-
-function BotBubble({
-  insight,
-  chart,
-  added,
-  onAdd,
-}: {
-  insight: string;
-  chart?: MockChartTemplate;
-  added?: boolean;
-  onAdd: () => void;
-}) {
-  return (
-    <div className="flex justify-start">
-      <div className="flex max-w-[92%] gap-2">
-        <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-purple/15 text-purple dark:bg-light-purple/20 dark:text-light-purple">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 2 L13.5 8.5 L20 10 L13.5 11.5 L12 18 L10.5 11.5 L4 10 L10.5 8.5 Z" />
-          </svg>
-        </div>
-        <div className="flex flex-1 flex-col gap-2">
-          {/* Insight */}
-          <div className="rounded-2xl rounded-tl-md border border-grey5 bg-grey5/30 px-3 py-2 text-sm leading-relaxed text-dark-blue dark:border-white/10 dark:bg-[#0F172A] dark:text-white">
-            {insight}
-          </div>
-
-          {/* Chart preview */}
-          {chart && (
-            <div className="overflow-hidden rounded-xl border border-grey5 bg-white shadow-sm dark:border-white/10 dark:bg-[#0F172A]">
-              <div className="border-b border-grey5 px-3 py-1.5 dark:border-white/10">
-                <div className="text-[10px] font-extrabold uppercase tracking-wider text-kpmg-default dark:text-light-blue">
-                  {chart.title}
-                </div>
-              </div>
-              <div className="relative h-[180px] p-2">
-                <ChartView config={chart} />
-              </div>
-              <div className="border-t border-grey5 bg-grey5/20 px-3 py-2 dark:border-white/10 dark:bg-[#060B28]">
-                {added ? (
-                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-dark-green dark:text-light-green">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                    Added to dashboard
-                  </div>
-                ) : (
-                  <button
-                    onClick={onAdd}
-                    className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-md bg-kpmg-default px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm transition-all hover:opacity-90"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                      <line x1="12" y1="5" x2="12" y2="19" />
-                      <line x1="5" y1="12" x2="19" y2="12" />
-                    </svg>
-                    Add to Dashboard
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function TypingIndicator() {
-  return (
-    <div className="flex justify-start">
-      <div className="flex gap-2">
-        <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-purple/15 text-purple dark:bg-light-purple/20 dark:text-light-purple">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 2 L13.5 8.5 L20 10 L13.5 11.5 L12 18 L10.5 11.5 L4 10 L10.5 8.5 Z" />
-          </svg>
-        </div>
-        <div className="flex items-center gap-1 rounded-2xl rounded-tl-md border border-grey5 bg-grey5/30 px-3 py-2.5 dark:border-white/10 dark:bg-[#0F172A]">
-          <span
-            className="h-1.5 w-1.5 animate-bounce rounded-full bg-grey3 dark:bg-light-blue/50"
-            style={{ animationDelay: '0ms' }}
-          />
-          <span
-            className="h-1.5 w-1.5 animate-bounce rounded-full bg-grey3 dark:bg-light-blue/50"
-            style={{ animationDelay: '150ms' }}
-          />
-          <span
-            className="h-1.5 w-1.5 animate-bounce rounded-full bg-grey3 dark:bg-light-blue/50"
-            style={{ animationDelay: '300ms' }}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
+export default ViewEditSar;

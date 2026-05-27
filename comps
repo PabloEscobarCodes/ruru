@@ -1,1459 +1,1647 @@
-import React, { useEffect, useState } from "react";
-import { useHistory,useParams,Link } from "react-router-dom";
-import { Button, Card, CardBody, Col, Container, Input, Label, Modal, ModalBody, ModalFooter, ModalHeader, Row } from "reactstrap";
-import BreadCrumb from "../../../Components/Common/BreadCrumb";
-import AsyncSelect from "react-select/async";
-
-import * as html2canvas from "html2canvas"
-import {jsPDF} from "jspdf";
-import {
-    getSarData,
-    postUploadArcImage,
-    getRequestData,
-    minMaxLength,
-    notify,
-    postSarViewEdit,
-    downloadPdfFile,
-} from "../../../helpers/backend_helper";
-import Select from "react-select";
-import Loader from "../../../Components/Common/Loader";
-import config from "../../../config";
-import { format } from "date-fns";
-import './view-edit-sar.css';
-import {encode as base64_encode} from 'base-64';
+"use client";
+import React, { use, useRef, useState, useEffect } from 'react';
+import AlertDiv from "@/components/AlertDiv";
+import Breadcrumbs from "@/components/Breadcrumbs";
+import Select, { StylesConfig } from "react-select";
+import { useRouter, useSearchParams, useParams } from "next/navigation";
+import DataTable from "@/components/DataTable";
+import { callBackend, formatLocalDateTime, downloadPdfFile, callBackendFormData } from "@/lib/helpers";
+import TableSkeleton from "@/components/TableSkeleton";
+import { X, Eye, File, PackageOpen, Menu, SquarePen, Trash, CirclePause, SquareUser, CalendarDays, SquareMenu, Footprints, FileCheck, FilePenLine, ReceiptText, RefreshCw, Tag, Save, Network, Shield, BrickWallShield, MoreHorizontal, Copy, Plus, Minus, Trash2, FileUp, Edit, FileDown, FilePlus, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, FileText, CirclePlay, Users, User, Paperclip, FileArchive, FileTextIcon } from "lucide-react";
+import { toast } from "react-hot-toast";
+// import {jsPDF} from "jspdf";
 import DOMPurify from 'dompurify';
-import IdleTimerContainer from "../../../Components/Common/IdleTimerContainer";
-
-const ViewEditSar = () => {
-    const MAX_COUNT = 5;
-    const printRef = React.useRef();
-    const history = useHistory()
-    const { sgpId } = useParams();
-    const { assessmentId } = useParams();
-    const [requestCommonDetail, setRequestCommonDetail] = useState();
-    const [isLoading, setIsLoading] = useState(false);
-    const [isUpdateToExistingSolution, setIsUpdateToExistingSolution] = useState(false);
-    const [infoModal, setInfoModal] = useState(false);
-    const [alertModal, setAlertModal] = useState(false);
-    const [apiData, setApiData] = useState([]);
-    const [allData, setAllData] = useState();
-    const [sub111text, set111Text] = useState('');
-    const [addAendumText, setAddAendumText] = useState('');
-    const header111DefaultData = "<div style='max-width: 83% !important;margin-left: auto;margin-right: auto;padding-top: 10px;'><h4 class='text-primary'>1.1.1 &nbsp&nbsp Unresolved High and Medium Risk Items</h4></div><div style='max-width: 83% !important;margin-left: auto;margin-right: auto;'><div><h5>The POA&M, section 6, covers the detail these unresolved risks, as well as the low and informational risk items not stated within this section.</h5></div></div><div class='header_1_1_1_subsection'><div><div style='max-width: 83% !important;margin-left: auto;margin-right: auto;padding-top: 10px;'><h4 class='text-primary'>1.1.1.1 &nbsp&nbsp High or Medium Risk Item 1</h4></div><div style='max-width: 83% !important;margin-left: auto;margin-right: auto;'><div><h5>[Statement about the risk, remediation data and residual risk.]</h5></div><div><h5>[If no high or medium findings, select the Delete section 1_1_1 text button at the bottom of this page]</h5></div></div></div></div>"  
-
-    function toggleInfoModal() {
-        setInfoModal(!infoModal);
-    }
-    function toggleAlertModal() {
-        setAlertModal(!alertModal);
-    }
-
-    const[addendumHeader,setAddendumHeader] = useState('2');
-    const[header111,setHeader111] = useState('2');
-    useEffect(() => {
-        setIsLoading(true)
-        getSarData(assessmentId).then((result) => {
-
-            let sarData = {};
-            Object.keys(result.data.data.editSarTemplate).map((key, index) => {
-                sarData[key] = htmlPurify(result.data.data.editSarTemplate[key]);
-            })
-
-            setApiData(sarData);
-            setAllData(result.data.data);
-            set111Text(result.data.data.sub_1_1_1_btn_val);
-            setAddAendumText(result.data.data.sub_7_btn_val)
-            setAddendumHeader(result.data.data.isAddendumSec)
-            setHeader111(result.data.data.isHeader111Sec)
-            document.addEventListener("click", (e) => {
-                if (e.target.classList.contains("addTestingOverview_7")) {
-                    addTestingOverview_7(e)
-                }
-            }, true);
-            setIsLoading(false)
-        });
-    }, [assessmentId]);
-
-    const addendumDefaultData = `<div><div class="col-xs-12 col-md-12 col-lg-12 p-t-2"><div style="max-width: 83% !important;margin-left: auto;margin-right: auto;padding-top: 30px;"><h2 class="text-primary">7 &nbsp&nbsp Addendum</h2></div></div></div><div class="addendum_subsection"><div class="col-xs-12 col-md-12 col-lg-12 p-t-2"><div style="max-width: 83% !important;margin-left: auto;margin-right: auto;padding-top: 10px;"><h3 class="text-primary">7.1 &nbsp&nbsp Month DD, YYYY</h3></div><div style="max-width: 83% !important;margin-left: auto;margin-right: auto;"><div><h5>[Overview text to summarize changes made and additional testing completed.] </h5></div></div><div style="max-width: 83% !important;margin-left: auto;margin-right: auto;padding-top: 10px;"><button style="float: right;" type="button" class="btn btn-custom-primary addTestingOverview_7"> + Add Testing Overview</button><h4 class="text-primary">7.1.1 &nbsp&nbsp Testing Overview</h4></div><div style="max-width: 83% !important;margin-left: auto;margin-right: auto;"><table class="table table-bordered"><thead><tr><th style="color:white;" >Event (or version)</th><th style="color:white;" >Test Date</th><th style="color:white;" >Outcome</th></tr></thead><tbody><tr><td rowspan="2">Penetration Test - <span>${allData?.solutionName}</span> environment</td><td rowspan="2"><span>${allData?.goLiveDate}</span></td><td>Result:</td></tr><tr><td>Scope:</td></tr><tr><td rowspan="2">Final Static Code Analysis - <span>${allData?.solutionName}</span> environment</td><td rowspan="2"><span>${allData?.goLiveDate}</span></td><td>Result:</td></tr><tr><td>Scope:</td></tr></tbody></table></div></div></div>`;
-
-    const addendumDefaultSubsectionData = `<div style="max-width: 83% !important;margin-left: auto;margin-right: auto;padding-top: 10px;"><h3 class="text-primary">7.1 &nbsp&nbsp Month DD, YYYY</h3></div><div style="max-width: 83% !important;margin-left: auto;margin-right: auto;"><div><h5>[Overview text to summarize changes made and additional testing completed.] </h5></div></div><div style="max-width: 83% !important;margin-left: auto;margin-right: auto;padding-top: 10px;"><button style="display:block; float: right;" type="button" class="btn btn-custom-primary addTestingOverview_7"> + Add Testing Overview</button><h4 class="text-primary">7.1.1 &nbsp&nbsp Testing Overview</h4></div><div style="max-width: 83% !important;margin-left: auto;margin-right: auto;"><table class="table table-bordered"><thead><tr><th style="color:white;" >Event (or version)</th><th style="color:white;" >Test Date</th><th style="color:white;" >Outcome</th></tr></thead><tbody><tr><td rowspan="2">Penetration Test - <span>${allData?.solutionName}</span> environment</td><td rowspan="2"><span>${allData?.goLiveDate}</span></td><td>Result:</td></tr><tr><td>Scope:</td></tr><tr><td rowspan="2">Final Static Code Analysis - <span>${allData?.solutionName}</span> environment</td><td rowspan="2"><span>${allData?.goLiveDate}</span></td><td>Result:</td></tr><tr><td>Scope:</td></tr></tbody></table></div>`;
-
-    let initialValues = {
-        sarCloneAction: "",
-        igpCloneId: "",
-        sgpId: sgpId,
-    };
-
-    const [form, setForm] = useState(initialValues);
-    const [formErrors, setFormErrors] = useState({});
-
-    const validate = (name, value) => {
-        switch (name) {
-            case "sarCloneAction":
-                if (minMaxLength(value, 1)) {
-                    formErrors[name] = `Please select a option.`;
-                } else {
-                    delete formErrors[name];
-                }
-
-                setFormErrors(formErrors);
-                setForm({ ...form, sarCloneAction: value });
-                break;
-
-            case "igpCloneId":
-                if (minMaxLength(value, 1)) {
-                    toggleAlertModal()
-                    formErrors[name] = `Please search and select.`;
-                } else {
-                    delete formErrors[name];
-                }
-
-                setFormErrors(formErrors);
-                setForm({ ...form, igpCloneId: value });
-                break;
-
-            default:
-                break;
-        }
-    };
-
-    const validateOnSubmit = () => {
-        const newErrors = {};
-        for (let item in form) {
-            validate(item, form[item]);
-        }
-        return newErrors;
-    };
-
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        validateOnSubmit();
-        if (Object.entries(formErrors || {}).length > 0) {
-            console.log('abc')
-        } else {
-            let formData = new FormData();
-            for (let value in form) {
-                formData.append(value, form[value]);
-            }
-            formData.append("sgpId", sgpId);
-
-            setIsLoading(true)
-        }
-    };
-
-
-    const searchBySgpIdOptions = async (searchTerm = "") => {
-        // searchTerm = "?search=" + searchTerm;
-        searchTerm = "/" + searchTerm;
-        let res = await getRequestData(searchTerm);
-        let { data } = res.data;
-        return data;
-    };
-
-    const handleDownloadPdf = async (e) => {
-        e.preventDefault()
-        const element = printRef.current;
-        const canvas = await html2canvas(element, {
-                scrollX: -window.scrollX,
-                scrollY: -window.scrollY,
-                width: element.clientWidth,
-                height: element.clientHeight,
-                allowTaint: true,
-                useCORS: true
-            });
-        const data = canvas.toDataURL('image/png');
-
-        // var imgWidth = 210; 
-        // var pageHeight = 295;  
-        // var imgHeight = canvas.height * imgWidth / canvas.width;
-        // var heightLeft = imgHeight;
-  
-        // var doc = new jsPDF('p', 'mm');
-        // var position = 0;
-  
-        // doc.addImage(data, 'PNG', 0, position, imgWidth, imgHeight);
-        // heightLeft -= pageHeight;
-  
-        // while (heightLeft >= 0) {
-        //   position = heightLeft - imgHeight;
-        //   doc.addPage();
-        //   doc.addImage(data, 'PNG', 0, position, imgWidth, imgHeight);
-        //   heightLeft -= pageHeight;
-        // }
-        // doc.save('testing-report.pdf');
-
-        const pdf = new jsPDF('1', 'pt', [element.clientWidth, element.clientHeight], true);
-        const imgProperties = pdf.getImageProperties(data);
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight =
-          (imgProperties.height * pdfWidth) / imgProperties.width;
-    
-        pdf.addImage(data, 'PNG', 0, 0, element.clientWidth, element.clientHeight,'FAST');
-        pdf.save('testing-report.pdf');
-
-
-      };
-
-    const penTestOptions = [
-        { value: "Yes", label: "Yes" },
-        { value: "No", label: "No" }
-    ];
-
-    document.title = "VTM :: SAR Template";
-
-    const breadCrumbUrls = [
-        { name: "Home", url: "/dashboard" },
-        { name: "Requestor", url: "/requestor-list" },
-    ];
-
-    const clickHandler = (e) => {
-        // `target` is the element the click was on (the div we hooked or an element
-        // with in it), `currentTarget` is the div we hooked the event on
-        const el = e.target.closest("select");
-        if (el && e.currentTarget.contains(el)) {
-            const elements = document.querySelector("[class='overall_residual_risk']")
-            const elementsFirstPage = document.querySelector("[class='comb_residual_view']")
-
-            if (el.value === '1') {
-                elements.innerHTML = '<div><h4 align="center"><b><span style="color: #00B050;">LOW&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; </span></b></h4></div>';
-                if(elementsFirstPage){
-                    elementsFirstPage.innerHTML = '<b><span style="color: #00B050;">LOW&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; </span></b>';
-                }
-
-            } else if (el.value === '2') {
-                elements.innerHTML = '<div><h4 align="center"><b><span style="color: #FFC000;">MEDIUM&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; </span></b></h4></div>';
-                if(elementsFirstPage){
-                    elementsFirstPage.innerHTML = '<b><span style="color: #FFC000;">MEDIUM&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; </span></b>';
-                }
-
-            } else if (el.value === '3') {
-                elements.innerHTML = '<div><h4 align="center"><b><span style="color: #FF0000;">HIGH&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; </span></b></h4></div>';
-                if(elementsFirstPage){
-                    elementsFirstPage.innerHTML = '<b><span style="color: #FF0000;">HIGH&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; </span></b>';
-                }
-
-            }
-
-        }
-    }
-
-    const [uploadedFiles, setUploadedFiles] = useState([]);
-    const [fileLimit, setFileLimit] = useState(false);
-    const [fileName, setFileName] = useState([]);
-    const [imageUrl, setImageUrl] = useState('');
-    const handleUploadFiles = (files) => {
-
-        const uploaded = [];
-
-        files.some((file) => {
-            if (uploaded.findIndex((f) => f.name === file.name) === -1) {
-                uploaded.push(file);
-            }
-        });
-
-        setUploadedFiles(uploaded);
-
-        let formData = new FormData();
-        if (uploaded.length) {
-            for (let i = 0; i < uploaded.length; i++) {
-
-                let fileCheckName = uploaded[i].name;
-                let fileCheckType = uploaded[i].type;
-                var allowedFileType = ['image/png', 'image/jpeg', 'image/jpg'];
-                var allowedFileName = ['png', 'jpeg', 'jpg'];
-
-                if(allowedFileType.indexOf(fileCheckType) > -1 && allowedFileName.indexOf(fileCheckName.split('.').pop().toLowerCase()) > -1 ) {
-                    formData.append("architectureImage[]", uploaded[i]);
-                } else {
-                    notify("Only JPEG, PNG, and JPG images are allowed.")
-                    return false;                
-                }
-            }
-        }
-        formData.append("assessmentId",assessmentId)
-
-        setIsLoading(true);
-
-        postUploadArcImage(formData).then((result) => {
-
-            if(result?.errors) {
-                setIsLoading(false);
-                notify("Only JPEG, PNG, and JPG images are allowed.")
-            } else {
-                setIsLoading(false);
-                let fileName = result.data.data.fileName.split(";")
-                let filePath = result.data.data.imgUrl
-                let abc = document.getElementById("header_2_1_img_show").innerHTML;
-                fileName.map((data1,index) => {
-                    abc += '<img class="architecture_img" src="' + config.BASE_LOCATION_IMAGE + filePath + data1 + '" style="width:100%; display: block; margin-left: auto; margin-right: auto;" /><br>';
-                })
-                document.getElementById("header_2_1_img_show").innerHTML = abc;
-                notify(result.data.message,'success');
-            }
-        });
-    };
-
-    useEffect(() => {
-        if(allData?.isContentEditable){
-            const isContentEditable = allData?.isContentEditable;
-            if (isContentEditable === 'true') {
-                const dropdown = "<select class='form-control header_security_status'><option value='0'>Select Status</option><option value='1' style='background-color:#A8D08D'>Implemented</option><option value='2' style='background-color:#FFE599'>Partially Implemented</option><option value='3' style='background-color:#F4B083'>Gap</option><option value='4' style='background-color:#D0CECE'>Not Assessed</option><option value='5' style='background-color:#FFFFFF'>Not Applicable</option></select>"
-
-                let securityStatus = document.querySelectorAll('.header_3_4_security_status');
-                securityStatus.forEach(data => {
-                     data.innerHTML = dropdown
-                });
-
-                const residualRiskOverall = '<select class="form-control"><option style="color: #00B050;" value="1"><b>LOW</b></option><option style="color: #FFC000;" value="2"><b>MEDIUM</b></option><option style="color: #FF0000;" value="3"><b>HIGH</b></option></select>';
-                let riskSumaryDropdown = document.querySelectorAll('.overall_residual_edit')
-                riskSumaryDropdown.forEach(data => {
-                    data.innerHTML = residualRiskOverall
-                });
-
-                const residualRiskFirstPage = '<select class="form-control"><option style="color: #00B050;" value="1"><b>LOW</b></option><option style="color: #FFC000;" value="2"><b>MEDIUM</b></option><option style="color: #FF0000;" value="3"><b>HIGH</b></option></select>';
-                let riskSumaryDropdownFirstPage = document.querySelectorAll('.comb_residual_edit')
-                riskSumaryDropdownFirstPage.forEach(data => {
-                    data.innerHTML = residualRiskFirstPage
-                });
-
-                let el2 = document.getElementById("header_2_1_img");
-                if(el2){
-                    document.getElementById("header_2_1_img").innerHTML = "<input type='file' multiple/>";
-                }
-
-                let el3 = document.getElementsByClassName("addTestingOverview_7");
-                if(el3[0]) {
-                    document.getElementsByClassName('addTestingOverview_7')[0].style.display = 'block';
-                    let addTestingOverview_7 = document.querySelectorAll('.addTestingOverview_7');
-                    addTestingOverview_7.forEach(data => {
-                         data.innerHTML = ' + Add Testing Overview '
-                    });
-                }
-            }
-        }
-
-
-        let el2 = document.getElementById("header_2_1_img");
-        if(el2){
-            document.getElementById("header_2_1_img").onchange = function (e) {
-                const chosenFiles = Array.prototype.slice.call(e.target.files);
-                handleUploadFiles(chosenFiles);
-            }
-        }
-
-        const elmns = document.querySelectorAll('.header_3_4_security_status');
-        Array.from(elmns).forEach(function (element) {
-            element.addEventListener('change', function (e) {
-                let txt = e.target.options[e.target.selectedIndex].text;
-                let status_val = e.target.value;
-
-                let pre = e.target
-                let td_pre = e.target.closest("td")
-
-                pre.text = txt
-                if (status_val === '1') {
-                    td_pre.setAttribute("style", "background-color:#A8D08D")
-                    td_pre.getElementsByTagName("div")[0].textContent = pre.text
-                } else if (status_val === '2') {
-                    td_pre.setAttribute("style", "background-color:#FFE599")
-                    td_pre.getElementsByTagName("div")[0].textContent = pre.text
-                } else if (status_val === '3') {
-                    td_pre.setAttribute("style", "background-color:#F4B083")
-                    td_pre.getElementsByTagName("div")[0].textContent = pre.text
-                } else if (status_val === '4') {
-                    td_pre.setAttribute("style", "background-color:#D0CECE")
-                    td_pre.getElementsByTagName("div")[0].textContent = pre.text
-                } else if (status_val === '5') {
-                    td_pre.setAttribute("style", "background-color:#FFFFFF")
-                    td_pre.getElementsByTagName("div")[0].textContent = pre.text
-                } else {
-                    pre.text = '-'
-                    td_pre.setAttribute("style", "background-color:#FFFFFF")
-                    td_pre.getElementsByTagName("div")[0].textContent = pre.text
-                }
-            });
-        });
-
-        // let el = document.getElementsByName("kpmg")[0];
-        // if(el){
-        //     document.getElementsByName("kpmg")[0].addEventListener('change', function (e) {
-        //         if (e.target.checked === true) {
-        //             e.target.setAttribute("checked", "checked");
-        //         } else {
-        //             e.target.removeAttribute("checked");
-        //         }
-        //     });
-        //     document.getElementsByName("kpmg")[1].addEventListener('change', function (e) {
-        //         if (e.target.checked === true) {
-        //             e.target.setAttribute("checked", "checked");
-        //         } else {
-        //             e.target.removeAttribute("checked");
-        //         }
-        //     });
-        //     document.getElementsByName("kpmg")[2].addEventListener('change', function (e) {
-        //         if (e.target.checked === true) {
-        //             e.target.setAttribute("checked", "checked");
-        //         } else {
-        //             e.target.removeAttribute("checked");
-        //         }
-        //     });
-        // }   
-
-        // Focus on edit
-        document.addEventListener("focus", (e) => {
-            let isContentEditable = e.target.getAttribute('contenteditable');
-            if(isContentEditable === 'true'){
-                e.target.setAttribute("style", "outline: 1px solid black")
-            }
-          }, true);
-
-        document.addEventListener("blur", (e) => {
-        let isContentEditable = e.target.getAttribute('contenteditable');
-        if(isContentEditable === 'true'){
-            e.target.setAttribute("style", "outline: 0px solid transparent")
-        }
-        }, true);
-
-        // document.addEventListener("paste", (e) => {
-        //     let isContentEditable = e.target.getAttribute('contenteditable');
-        //     if(isContentEditable === 'true'){
-        //         e.target.bind("paste");
-        //     }
-        //     }, true);
-
-        // let el1 = document.getElementsByName("business_cri")[0];
-        // if(el1){
-        //     document.getElementsByName("business_cri")[0].addEventListener('change', function (e) {
-        //         if (e.target.checked === true) {
-        //             e.target.setAttribute("checked", "checked");
-        //         } else {
-        //             e.target.removeAttribute("checked");
-        //         }
-        //     });
-        //     document.getElementsByName("business_cri")[1].addEventListener('change', function (e) {
-        //         if (e.target.checked === true) {
-        //             e.target.setAttribute("checked", "checked");
-        //         } else {
-        //             e.target.removeAttribute("checked");
-        //         }
-        //     });
-        //     document.getElementsByName("business_cri")[2].addEventListener('change', function (e) {
-        //         if (e.target.checked === true) {
-        //             e.target.setAttribute("checked", "checked");
-        //         } else {
-        //             e.target.removeAttribute("checked");
-        //         }
-        //     });
-        //     document.getElementsByName("business_cri")[3].addEventListener('change', function (e) {
-        //         if (e.target.checked === true) {
-        //             e.target.setAttribute("checked", "checked");
-        //         } else {
-        //             e.target.removeAttribute("checked");
-        //         }
-        //     });
-        //     document.getElementsByName("business_cri")[4].addEventListener('change', function (e) {
-        //         if (e.target.checked === true) {
-        //             e.target.setAttribute("checked", "checked");
-        //         } else {
-        //             e.target.removeAttribute("checked");
-        //         }
-        //     });
-        // }
-
-        const elements1 = document.querySelectorAll('input[name="kpmg"]');
-        Array.from(elements1).forEach(function (element) {
-            element.addEventListener('change', function (e) {
-                if (e.target.checked === true) {
-                    e.target.setAttribute("checked", "checked");
-                } else {
-                    e.target.removeAttribute("checked");
-                }
-            });
-        });
-
-        const elements2 = document.querySelectorAll('input[name="business_cri"]');
-        Array.from(elements2).forEach(function (element) {
-            element.addEventListener('change', function (e) {
-                if (e.target.checked === true) {
-                    e.target.setAttribute("checked", "checked");
-                } else {
-                    e.target.removeAttribute("checked");
-                }
-            });
-        });
-
-        const elements = document.querySelectorAll('.users_data');
-        Array.from(elements).forEach(function (element) {
-            element.addEventListener('change', function (e) {
-                if (e.target.checked === true) {
-                    e.target.setAttribute("checked", "checked");
-                } else {
-                    e.target.removeAttribute("checked");
-                }
-            });
-        });
-
-        const elements3 = document.querySelectorAll('.radio_fs');
-        Array.from(elements3).forEach(function (element) {
-            element.addEventListener('change', function (e) {
-                document.getElementsByName(e.target.name)[0].removeAttribute("checked");
-                document.getElementsByName(e.target.name)[1].removeAttribute("checked");
-                e.target.setAttribute("checked", "checked");
-            });
-        });
-
-        const elements4 = document.querySelectorAll('.radio_pt');
-        Array.from(elements4).forEach(function (element) {
-            element.addEventListener('change', function (e) {
-                document.getElementsByName(e.target.name)[0].removeAttribute("checked");
-                document.getElementsByName(e.target.name)[1].removeAttribute("checked");
-                e.target.setAttribute("checked", "checked");
-            });
-        });
-    })
-
-    const addActivities = (event) => {
-        let id = event.target.id;
-        let newRow = "<tr>";
-        newRow += "<td>Add topic name here</td>";
-        newRow += "<td>Add time frame here</td>";
-        newRow += "</tr>";
-
-        document.getElementById("activities_row").getElementsByTagName("tbody")[0].insertAdjacentHTML('beforeend', newRow)
-    }
-
-    const addTestingOverview = (event) => {
-        let trCount = document.getElementById("header_3_2").getElementsByTagName("tr").length;
-
-        let newRow = `<tr>
-                <td rowspan="2">
-                    Add event here
-                    <div>
-                        <input type="radio" name="radio_button_pt_`+trCount+`" class="radio_pt" value="radio_`+trCount+`_pt" checked="checked">
-                        <label for="radio_`+trCount+`_pt">In-house</label> 
-                        <input type="radio" name="radio_button_pt_`+trCount+`" class="radio_pt" value="radio_`+(trCount+1)+`_pt">
-                        <label for="radio_`+(trCount+1)+`_pt">Third Party</label>
-                    </div>
-                </td>
-                <td rowspan="2">Add test date here</td>
-                <td>Result:</td>
-            </tr>
-            <tr>
-                <td>Scope:</td>
-            </tr>`;
-        document.getElementById("testing_overview_row").getElementsByTagName("tbody")[0].insertAdjacentHTML('beforeend', newRow);
-        
-        const elements4 = document.getElementsByName("radio_button_pt_"+trCount);
-        Array.from(elements4).forEach(function (element) {
-            element.addEventListener('change', function (e) {
-                document.getElementsByName(e.target.name)[0].removeAttribute("checked");
-                document.getElementsByName(e.target.name)[1].removeAttribute("checked");
-                e.target.setAttribute("checked", "checked");
-            });
-        });
-    }
-
-    const addSupportTeamRow = (event) => {
-
-        let newRow = "<tr>";
-        newRow += "<td>Add role</td>";
-        newRow += "<td>Add name</td>";
-        newRow += "<td>Add email address</td>";
-        newRow += "</tr>";
-        document.getElementById("support_team_row").getElementsByTagName("tbody")[0].insertAdjacentHTML('beforeend', newRow)
-    }
-
-    
-    const delAddSub_7 = (e) => {
-        e.preventDefault();
-        if (getComputedStyle(document.querySelector('#addendum_header')).display === 'none') {
-            setAddendumHeader('1');
-            document.getElementById("addendum_header").setAttribute("style", "display:block");
-            document.getElementById("addAddendumSubsection").setAttribute("style", "display: flex; justify-content: flex-end; max-width: 83%; margin-left: auto; margin-right: auto; padding-top: 30px;");
-            setAddAendumText('Delete addendum')
-        } else {
-            setAddendumHeader('2');
-            document.getElementById("addendum_header").setAttribute("style", "display:none");
-            document.getElementById("addAddendumSubsection").setAttribute("style", "display:none");
-            setAddAendumText('Add addendum')
-        }
-    }
-
-    const delAddSub_1_1_1 = (e) => {
-        e.preventDefault();
-        if (getComputedStyle(document.querySelector('#header_1_1_1')).display === 'none') {
-            setHeader111('1');
-            document.getElementById("header_1_1_1").setAttribute("style", "display:block");
-            document.getElementById("add_1_1_1_subsection").setAttribute("style", "display:block");
-            set111Text("Delete section 1_1_1 text");
-            document.getElementById("header_1_1_2_txt").innerHTML = '1.1.2 &nbsp; &nbsp; Retest and Remediation';
-        } else {
-            setHeader111('2');
-            document.getElementById("header_1_1_1").setAttribute("style", "display:none");
-            document.getElementById("add_1_1_1_subsection").setAttribute("style", "display:none");
-            set111Text('Add section 1_1_1 text');
-            document.getElementById("header_1_1_2_txt").innerHTML = '1.1.1 &nbsp; &nbsp; Retest and Remediation';
-        }
-    }
-
-    const add_1_1_1_subsection = (e) => {
-        let header_1_1_1_subsection_div = htmlPurify(document.getElementsByClassName("header_1_1_1_subsection")[0].innerHTML);
-        document.querySelector(".header_1_1_1_subsection").insertAdjacentHTML('beforeend', `<div">${header_1_1_1_subsection_div}</div>`);
-
-    }
-
-    const addAddendumSubsection = (e) => {
-        let addendum_div = addendumDefaultSubsectionData;
-        document.querySelector(".addendum_subsection").insertAdjacentHTML('beforeend', `<br><div class="col-xs-12 col-md-12 col-lg-12 p-t-2">${addendum_div}</div>`);
-    }
-
-    const addTestingOverview_7 = (e) => {
-        if (e.target.classList.contains("addTestingOverview_7")) {
-            e.target.parentNode.nextSibling.getElementsByTagName("tbody")[0].insertAdjacentHTML('beforeend', `<tr><td rowspan="2">Add event here</td><td rowspan="2">Add test date here</td><td>Result:</td></tr><tr><td>Scope:</td></tr>`)
-        }
-    }
-
-
-    const[formData1, setFormData] = useState([]);
-
-
-    function htmlPurify(dirtyString) {
-        let cleanHtml = DOMPurify.sanitize(dirtyString);
-        return cleanHtml;
-    }
-
-    // function stripHtml(dirtyString) {
-    //     const doc = new DOMParser().parseFromString(dirtyString, 'text/html');
-    //     return doc.body.textContent || '';
-    // }
-
-    // function stripScripts(s) {
-    //     var div = document.createElement('div');
-    //     div.innerHTML = s;
-    //     var scripts = div.getElementsByTagName('script');
-    //     var i = scripts.length;
-    //     while (i--) {
-    //     scripts[i].parentNode.removeChild(scripts[i]);
-    //     }
-    //     return div.innerHTML;
-    //   }
-
-    const submitDraftSar = (event) => {
-        event.preventDefault();
-        document.addEventListener("click", (e) => {
-            if (e.target.classList.contains("addTestingOverview_7")) {
-                addTestingOverview_7(e)
-            }
-        }, true);
-        //Remove data before submit
-        let securityStatus = document.querySelectorAll('.header_3_4_security_status');
-        securityStatus.forEach(data => {
-                data.innerHTML = ''
-        });
-
-        let riskSumaryDropdown = document.querySelectorAll('.overall_residual_edit')
-        riskSumaryDropdown.forEach(data => {
-            data.innerHTML = ''
-        });
-
-        let combResidualEdit = document.querySelectorAll('.comb_residual_edit')
-        combResidualEdit.forEach(data => {
-            data.innerHTML = ''
-        });
-
-        let e1 = document.getElementById("addTestingOverview")
-        if(e1){
-            e1.remove();
-        }
-        let e2 = document.getElementById("addActivities")
-        if(e2){
-            e2.remove();
-        }
-        let el3 = document.getElementsByClassName("addTestingOverview_7");
-        if(el3[0]) {
-            document.getElementsByClassName('addTestingOverview_7')[0].style.display = 'none';
-        }
-        let addTestingOverview_7 = document.querySelectorAll('.addTestingOverview_7');
-        addTestingOverview_7.forEach(data => {
-                data.innerHTML = ''
-        });
-
-        //Remove data end
-
-        // let image_data = document.getElementById("header_2_1_img_show").innerHTML;
-        // document.getElementById("header_2_1_img_show").innerHTML = image_data.replace(config.BASE_LOCATION_IMAGE,"");
-        let header_1 = htmlPurify(document.getElementById("header_1").innerHTML);
-        let header_1_1 = htmlPurify(document.getElementById("header_1_1").innerHTML);
-        let header_1_1_1 = htmlPurify(document.getElementById("header_1_1_1").innerHTML);
-        /*let header_1_1_1_1 = htmlPurify(document.getElementById("header_1_1_1_1").innerHTML);
-        let header_1_1_1_2 = htmlPurify(document.getElementById("header_1_1_1_2").innerHTML);
-        let header_1_1_1_3 = htmlPurify(document.getElementById("header_1_1_1_3").innerHTML);*/
-        let header_1_1_2 = htmlPurify(document.getElementById("header_1_1_2").innerHTML);
-        let header_1_2 = htmlPurify(document.getElementById("header_1_2").innerHTML);
-        // let header_1_2 = htmlPurify(document.getElementById("header_1_2").innerHTML);
-        let header_1_3 = htmlPurify(document.getElementById("header_1_3").innerHTML);
-        let header_1_4 = htmlPurify(document.getElementById("header_1_4").innerHTML);
-        let header_1_5 = htmlPurify(document.getElementById("header_1_5").innerHTML);
-        let header_2 = htmlPurify(document.getElementById("header_2").innerHTML);
-        let header_2_1 = htmlPurify(document.getElementById("header_2_1").innerHTML);
-        let header_2_2 = '';
-        let header_2_2_1 = ''; 
-        let header_2_2_2 = ''; 
-        let header_2_2_3 = ''; 
-        let header_2_2_4 = ''; 
-        let header_2_2_5 = ''; 
-        let header_2_2_6 = ''; 
-        let header_2_2_7 = ''; 
-        if(document.getElementById("header_2_2_1")) {
-            header_2_2 = htmlPurify(document.getElementById("header_2_2").innerHTML);
-            header_2_2_1 = htmlPurify(document.getElementById("header_2_2_1").innerHTML);
-            header_2_2_2 = htmlPurify(document.getElementById("header_2_2_2").innerHTML);
-            header_2_2_3 = htmlPurify(document.getElementById("header_2_2_3").innerHTML);
-            header_2_2_4 = htmlPurify(document.getElementById("header_2_2_4").innerHTML);
-            header_2_2_5 = htmlPurify(document.getElementById("header_2_2_5").innerHTML);
-            header_2_2_6 = htmlPurify(document.getElementById("header_2_2_6").innerHTML);
-            header_2_2_7 = htmlPurify(document.getElementById("header_2_2_7").innerHTML);
-        }
-        let header_3 = htmlPurify(document.getElementById("header_3").innerHTML);
-        let header_3_1 = '';
-        let header_3_3 = '';
-        if(document.getElementById("header_3_1")) {
-            header_3_1 = htmlPurify(document.getElementById("header_3_1").innerHTML);
-            header_3_3 = htmlPurify(document.getElementById("header_3_3").innerHTML);
-        }
-        let header_3_2 = htmlPurify(document.getElementById("header_3_2").innerHTML);
-        let header_3_4 = htmlPurify(document.getElementById("header_3_4").innerHTML);
-        // let header_4 = htmlPurify(document.getElementById("header_4").innerHTML);
-        // let header_5 = htmlPurify(document.getElementById("header_5").innerHTML);
-        let header_6 = htmlPurify(document.getElementById("header_6").innerHTML);
-        let header_7 = htmlPurify(document.getElementById("header_7").innerHTML);
-        let header_support_team = htmlPurify(document.getElementById("header_support_team").innerHTML);
-        let addendum_header = htmlPurify(document.getElementById("addendum_header").innerHTML);
-
-        let sar_comments = document.getElementById("sar_comments")
-        if(sar_comments){
-            sar_comments = sar_comments.value
-        }
-
-        let formData = new FormData();
-        let data = {
-        'header_1':header_1,
-        'header_1_1':header_1_1,
-        'header_1_1_1':header_1_1_1,
-        'header_1_1_2':header_1_1_2,
-        'header_1_2':header_1_2,
-        'header_1_3':header_1_3,
-        'header_1_4':header_1_4,
-        'header_1_5':header_1_5,
-        'header_2':header_2,
-        'header_2_1':header_2_1,
-        'header_2_2':header_2_2,
-        'header_2_2_1':header_2_2_1,
-        'header_2_2_2':header_2_2_2,
-        'header_2_2_3':header_2_2_3,
-        'header_2_2_4':header_2_2_4,
-        'header_2_2_5':header_2_2_5,
-        'header_2_2_6':header_2_2_6,
-        'header_2_2_7':header_2_2_7,
-        'header_3':header_3,
-        'header_3_1':header_3_1,
-        'header_3_2':header_3_2,
-        'header_3_3':header_3_3,
-        'header_3_4':header_3_4,
-        'header_6':header_6,
-        'header_7':header_7,
-        'header_support_team':header_support_team,
-        'addendum_header':addendum_header,
-        'is_addendum_sec':addendumHeader,
-        'is_header_1_1_1_sec':header111,
-        }
-
-        if(apiData?.header_first_page){
-            let header_first_page = htmlPurify(document.getElementById("header_first_page").innerHTML);
-            data.header_first_page = header_first_page
-        }
-
-        if(apiData?.header_revision_second_page){
-            let header_revision_second_page = htmlPurify(document.getElementById("header_revision_second_page").innerHTML);
-            let header_reviewer_second_page = htmlPurify(document.getElementById("header_reviewer_second_page").innerHTML);
-            data.header_revision_second_page = header_revision_second_page
-            data.header_reviewer_second_page = header_reviewer_second_page
-        }
-        // let data = {
-        //     "assessmentId" : assessmentId,
-        //     "sarTemplateData" : JSON.stringify(formData1),
-        //     "submitId" : event.target.id,
-        //     "sarComments" : sar_comments
-        // }
-
-            formData.append("assessmentId" , assessmentId)
-            formData.append("sarTemplateData" , JSON.stringify([data]))
-            formData.append("submitId" , event.target.id)
-            formData.append("sarComments" , sar_comments)
-            // let test = document.querySelectorAll('.overall_residual_risk > div > h4 > b > span')[0];
-
-            let overallRisk = document.getElementsByClassName('overall_residual_risk')[0].innerText;
-            formData.append("overallRisk" , overallRisk)
-            setIsLoading(true)
-            postSarViewEdit(formData).then((result) => {
-                if(result.exception){
-                    notify("Something went wrong",'error');
-                }else{
-                    // let e1 = document.getElementById("header_2_1_img");
-                    // if(e1){
-                        // e1.remove();
-                    // }
-                    notify(result.data.message,'success');
-                    if(event.target.id == "submit_sar"){
-                        setTimeout(() => {
-                            history.push('/requestor-list')
-                        }, 800)
-                    } else {
-                        window.location.reload();
-                    }
-                    /*getSarData(assessmentId).then((result) => {
-
-                        let sarData = {};
-                        Object.keys(result.data.data.editSarTemplate).map((key, index) => {
-                            sarData[key] = htmlPurify(result.data.data.editSarTemplate[key]);
-                        })
-
-                        setApiData(sarData);
-                        setAllData(result.data.data);
-                        set111Text(result.data.data.sub_1_1_1_btn_val);
-                        setAddAendumText(result.data.data.sub_7_btn_val)
-                        setIsLoading(false)
-                    });*/
-                }
-            });
-
-    }
-
-    const submitCloneSAR = (event, assessmentID) => {
-        window.open('../testing-conducting-security/'+assessmentID+'/no', "_blank");
-    }
-
-    const addRevisionHistory = (event) => {
-            
-        var revHisRow = "<tr>";
-        revHisRow += "<td>Add version</td>";
-        revHisRow += "<td>Add author</td>";
-        revHisRow += "<td>Add date</td>";
-        revHisRow += "<td>Add revision</td>";
-        revHisRow += "</tr>";
-        document.getElementById("reviewer_his_row").getElementsByTagName("tbody")[0].insertAdjacentHTML('beforeend', revHisRow)
-
-    }
-
-    const addReviewerRow = (event) => {
-
-        var revRow = "<tr>";
-        revRow += "<td>Add reviewer</td>";
-        revRow += "<td>Add date reviewed</td>";
-        revRow += "</tr>";
-        document.getElementById("reviewer_row").getElementsByTagName("tbody")[0].insertAdjacentHTML('beforeend', revRow)
-        
-    }
-
-    const formData = new FormData();
-    formData.append('sgpId',allData?.sgpId)
-
-    var userData = JSON.parse(localStorage.getItem("authUser"));
-    userData = `${userData.token}pathpollution${base64_encode(userData.details.id)}`
-
-    return (
-        <React.Fragment>
-            <div className="page-content">
-                <IdleTimerContainer />
-                <Container fluid={true}>
-                    <BreadCrumb
-                        title={allData?.page_title}
-                        pageTitle="Home"
-                        breadCrumbUrls={breadCrumbUrls}
-                        link={"/requestor-list"}
-                    />
-                    <Row>
-                        <Col lg={6} md={6}>
-                            <Card>
-                                <CardBody>
-                                    <div className="d-flex align-items-center">
-                                        <div className="flex-grow-1 ms-3">
-                                            <h4 className="text-primary">
-                                                Project name:{"\u00A0"}
-                                                {allData?.projectName}
-                                            </h4>
-                                        </div>
-                                    </div>
-                                </CardBody>
-                            </Card>
-                        </Col>
-
-                        <Col lg={6} md={6}>
-                            <Card>
-                                <CardBody>
-                                    <div className="d-flex align-items-center">
-                                        <div className="flex-grow-1 ms-3">
-                                            <h4 className="text-primary">
-                                                Assessment Type:{"\u00A0"}
-                                                {allData?.assessmentType}
-                                            </h4>
-                                        </div>
-                                    </div>
-                                </CardBody>
-                            </Card>
-                        </Col>
-                    </Row>
-                    {isLoading && <Loader />}
-                    <Row className="sar-template-css">
-                        {allData?.isSarTemplateClone == 'yes' && (<Col lg={12}>
-                            <Card>
-                                <CardBody>
-                                    <div className="row">
-                                        <div className="col-md-10"><h3>Comments from security team and solution team</h3></div>
-                                    </div>
-                                    <table className="table table-bordered table-striped table-lg">
-                                        <thead>
-                                            <tr>
-                                                <th>{allData.isSarTemplateCloneMsg}</th>
-                                            </tr>
-                                        </thead>
-                                    </table>
-                                </CardBody>
-                            </Card>
-                        </Col>)}
-                        {allData?.sarLogComments && (<Col lg={12}>
-                            <Card>
-                                <CardBody>
-                                    <div className="row">
-                                        <div className="col-md-10"><h3>Comments from security team and solution team</h3></div>
-                                    </div>
-                                    <table className="table table-bordered table-striped table-lg">
-                                        <thead>
-                                            <tr>
-                                                <th>Comments by</th>
-                                                <th>Comments</th>
-                                                <th>Comments date</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {allData.sarLogComments.length > 0 ?
-                                                allData.sarLogComments.map((data,index) => {
-                                                    return (
-                                                        <tr key={index}>
-                                                            <td>{`${data.first_name} ${data.last_name} (${data.name})`}</td>
-                                                            <td>{data.comments}</td>
-                                                            <td>{format(new Date(data.created_date), "dd MMM  yyyy")}</td>
-                                                        </tr>
-                                                    );
-                                                }) : <tr><td colSpan="3"><center>No Record Found</center></td></tr>
-                                            }
-                                        </tbody>
-                                    </table>
-                                </CardBody>
-                            </Card>
-                        </Col>)}
-                        {allData?.securityLogComments && (<Col lg={12}>
-                            <Card>
-                                <CardBody>
-                                    <div className="row">
-                                        <div className="col-md-10"><h3>Internal security team comments</h3></div>
-                                    </div>
-                                    <table className="table table-bordered table-striped table-lg">
-                                        <thead>
-                                            <tr>
-                                                <th>Comments by</th>
-                                                <th>Comments</th>
-                                                <th>Comments date</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {allData.securityLogComments.length > 0 ?
-                                                allData.securityLogComments.map((data,index) => {
-                                                    return (
-                                                        <tr key={index}>
-                                                            <td>{`${data.first_name} ${data.last_name} (${data.name})`}</td>
-                                                            <td>{data.comments}</td>
-                                                            <td>{format(new Date(data.created_date), "dd MMM  yyyy")}</td>
-                                                        </tr>
-                                                    );
-                                                }) : <tr><td colSpan="3"><center>No Record Found</center></td></tr>
-                                            }
-                                        </tbody>
-                                    </table>
-                                </CardBody>
-                            </Card>
-                        </Col>)}
-                        {allData?.ipgSummary && (<Col lg={12}>
-                            <Card>
-                                <CardBody>
-                                    <div className="row">
-                                        <div className="col-md-10"><h3>Summary from security architect</h3></div>
-                                    </div>
-                                    <table className="table table-bordered table-striped table-lg">
-                                        <thead>
-                                            <tr>
-                                                <th>Summary</th>
-                                                <th>Summary date</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {allData.ipgSummary.length > 0 ?
-                                                allData.ipgSummary.map((data,index) => {
-                                                    return (
-                                                        <tr key={index}>
-                                                            <td>{data.comments}</td>
-                                                            <td>{format(new Date(data.created_date), "dd MMM yyyy")}</td>
-                                                        </tr>
-                                                    );
-                                                }) : <tr><td colSpan="3"><center>No Record Found</center></td></tr>
-                                            }
-                                        </tbody>
-                                    </table>
-                                </CardBody>
-                            </Card>
-                        </Col>)}
-                        {/* {allData?.isExportPdf && (<div className="text-end pb-2">
-                            <a href="/clearance/clearance-get-pdf/050100" onClick={(e) => handleDownloadPdf(e)} className="btn btn-custom-primary"><i className="ri-file-list-3-line align-middle"></i>Export as PDF</a>
-                        </div>)} */}
-                        {allData?.isExportPdf && (<div className="text-end pb-2">
-                            <Link
-                            to={"#"}
-                            className="float-right btn btn-custom-primary"
-                            onClick={(e) =>
-                                downloadPdfFile(
-                                e,
-                                "/clearance/clearance-get-pdf",
-                                formData,
-                                `SAR - ${allData?.solutionName}`
-                                )
-                            }
-                            >
-                            <i className="ri-file-list-3-line align-middle"></i>Export as PDF
-                            </Link> 
-                            {/*<a href={`${config.BASE_URL}/clearanceDownloadPdf/${allData?.sgpId}`} className="btn btn-custom-primary"><i className="ri-file-list-3-line align-middle"></i>Export as PDF</a>*/}
-                        </div>)}
-                        <div  ref={printRef} >
-                        {apiData?.header_first_page && (<div style={{width:'75%', display: 'block', marginLeft: 'auto', marginRight: 'auto'}}>
-                            <div className="row">
-                                <div className="col-xs-12 col-md-12">
-                                    <Card>
-                                        <CardBody>
-                                            <div className="panel">
-                                                <div className="panel-body">
-                                                    <div id="header_first_page" suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable}>
-                                                        <div suppressContentEditableWarning={true} onClick={(e) => clickHandler(e)} dangerouslySetInnerHTML={{ __html: apiData.header_first_page }}></div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </CardBody>
-                                    </Card>
-                                </div>
-                            </div>
-                        </div>)}
-                        {apiData?.header_revision_second_page && (<Row>
-                            <Col lg={12}>
-                                <Card>
-                                    <CardBody>
-                                        <div className="panel">
-                                            <div className="panel-body">
-                                                <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
-                                                    <div style={{maxWidth: '83%', marginRight: 'auto', paddingTop: '30px'}}>
-                                                        <h2 className="text-primary">Document review and approval</h2>
-                                                    </div>
-                                                    <div>
-                                                        {allData?.isContentEditable == 'true' && (<button type="button" id="addRevisionHistory" onClick={(e) => addRevisionHistory(e)} className="btn btn-custom-primary"> + Add revision history</button>)}
-                                                        <div id="header_revision_second_page" suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} dangerouslySetInnerHTML={{ __html: apiData.header_revision_second_page }}>
-                                                        </div>
-                                                        <br/>
-                                                        {allData?.isContentEditable == 'true' && (<button type="button" id="addReviewerRow" onClick={(e) => addReviewerRow(e)} className="btn btn-custom-primary"> + Add reviewer</button>)}      
-                                                        <div id="header_reviewer_second_page" suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} dangerouslySetInnerHTML={{ __html: apiData.header_reviewer_second_page }}>
-                                                        </div>
-                                                        <br/>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </CardBody>
-                                </Card>
-                            </Col>
-                        </Row>)}
-                        <Col lg={12}>
-                            <Card>
-                                <CardBody>
-                                    <div>
-                                        <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
-                                            <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px', }}>
-                                                <h2 className="text-primary">1 &nbsp; &nbsp; Solution Overview</h2>
-                                            </div>
-                                            <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1" dangerouslySetInnerHTML={{ __html: apiData.header_1 }}>
-                                            </div>
-                                        </div>
-
-                                        <div>
-                                            <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
-                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
-                                                    <h3 className="text-primary">1.1 &nbsp; &nbsp; Risk Summary</h3>
-                                                </div>
-                                                <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1_1" onClick={(e) => clickHandler(e)} dangerouslySetInnerHTML={{ __html: apiData.header_1_1 }}>
-                                                </div>
-
-                                                {/* <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
-                                                    <h4 className="text-primary">1.1.1 &nbsp; &nbsp; Unresolved High and Medium Risk Items</h4>
-                                                </div>
-                                                <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1_1_1" dangerouslySetInnerHTML={{ __html: apiData.header_1_1_1 }}>
-                                                </div> */}
-
-                                                <div style={{ display: 'none', justifyContent: 'flex-end', maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }} id='add_1_1_1_subsection' onClick={e => add_1_1_1_subsection(e)}>
-                                                    <button style={{ float: 'right' }} type="button" className="btn btn-custom-primary"> + Add subsection</button>
-                                                </div>
-                                                
-                                                <div style={{ display: apiData.header_1_1_1 ? 'block' : 'none' }} suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1_1_1" dangerouslySetInnerHTML={{ __html: apiData.header_1_1_1 ? apiData.header_1_1_1 : header111DefaultData }}>
-                                                </div>
-
-                                                {/* <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
-                                                </div>
-                                                <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1_1_1_1" dangerouslySetInnerHTML={{ __html: apiData.header_1_1_1_1 }}>
-                                                </div>
-
-                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
-                                                    <h4 className="text-primary">1.1.1.2 &nbsp; &nbsp; High or Medium Risk Item 2</h4>
-                                                </div>
-                                                <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1_1_1_2" dangerouslySetInnerHTML={{ __html: apiData.header_1_1_1_2 }}>
-                                                </div>
-
-                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
-                                                    <h4 className="text-primary">1.1.1.3 &nbsp; &nbsp; High or Medium Risk Item 3</h4>
-                                                </div>
-                                                <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1_1_1_3">
-                                                    <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto' }}>
-                                                        <div><h5>[Statement about the risk, remediation data and residual risk.]</h5></div>
-                                                    </div>
-                                                </div> */}
-
-                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
-                                                    <h4 className="text-primary"><div id="header_1_1_2_txt" dangerouslySetInnerHTML={{ __html: allData?.header_1_1_2_txt}}></div></h4>
-                                                </div>
-                                                <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1_1_2" dangerouslySetInnerHTML={{ __html: apiData.header_1_1_2 }}>
-                                                </div>
-
-                                            </div>
-                                            <div>
-                                                <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
-                                                    <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
-                                                        <h3 className="text-primary">1.2 &nbsp; &nbsp; Solution Summary</h3>
-                                                    </div>
-                                                    <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1_2" dangerouslySetInnerHTML={{ __html: apiData.header_1_2 }}>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
-                                                    <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
-                                                        <h3 className="text-primary">1.3 &nbsp; &nbsp; Data Classification and Business Criticality</h3>
-                                                    </div>
-                                                    <div suppressContentEditableWarning={true} contentEditable={false} id="header_1_3" dangerouslySetInnerHTML={{ __html: apiData.header_1_3 }}>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
-                                                    <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
-                                                        <h3 className="text-primary">1.4 &nbsp; &nbsp; Users</h3>
-                                                    </div>
-                                                    <div contentEditable="false" id="header_1_4" dangerouslySetInnerHTML={{ __html: apiData.header_1_4 }}>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
-                                                    <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
-                                                        <h3 className="text-primary">1.5 &nbsp; &nbsp; Hosting</h3>
-                                                    </div>
-                                                    <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1_5" dangerouslySetInnerHTML={{ __html: apiData.header_1_5 }}>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
-                                                    <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
-                                                        <h2 className="text-primary">2 &nbsp; &nbsp; Architecture</h2>
-                                                    </div>
-                                                    <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2" dangerouslySetInnerHTML={{ __html: apiData.header_2 }}>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
-                                                    <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
-                                                        <h3 className="text-primary">2.1 &nbsp; &nbsp; High Level Technical Architecture Diagram<br></br><span style={{fontSize:'10px',color:'red'}}>(Notes: Only allowed formats are : jpg,jpeg,png)</span></h3>
-                                                    </div>
-                                                    <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto' }} id="header_2_1_img"></div>
-                                                    <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_1" dangerouslySetInnerHTML={{ __html: apiData.header_2_1 }}>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            {apiData?.header_2_2_1 && (
-                                                <div>
-                                                    <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
-                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
-                                                            <h3 className="text-primary">2.2 &nbsp; &nbsp; Key Security Features</h3>
-                                                        </div>
-                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_2" dangerouslySetInnerHTML={{ __html: apiData.header_2_2 }}>
-                                                        </div>
-                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
-                                                            <h4 className="text-primary">2.2.1 &nbsp; &nbsp; General Environment <br></br><span style={{fontSize:'10px',color:'red'}}>(Notes: This is a text field supports up to maximum of 300,000 characters (including spaces), and it does not support below characters: *, >>, & , /, \, etc.)</span></h4>
-                                                        </div>
-                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_2_1" dangerouslySetInnerHTML={{ __html: apiData.header_2_2_1 }}>
-                                                        </div>
-                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
-                                                            <h4 className="text-primary">2.2.2 &nbsp; &nbsp; Authentication / Authorization</h4>
-                                                        </div>
-                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_2_2" dangerouslySetInnerHTML={{ __html: apiData.header_2_2_2 }}>
-                                                        </div>
-                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
-                                                            <h4 className="text-primary">2.2.3 &nbsp; &nbsp; Data Separation</h4>
-                                                        </div>
-                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_2_3" dangerouslySetInnerHTML={{ __html: apiData.header_2_2_3 }}>
-                                                        </div>
-                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
-                                                            <h4 className="text-primary">2.2.4 &nbsp; &nbsp; Encryption</h4>
-                                                        </div>
-                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_2_4" dangerouslySetInnerHTML={{ __html: apiData.header_2_2_4 }}>
-                                                        </div>
-                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
-                                                            <h4 className="text-primary">2.2.5 &nbsp; &nbsp; Logging and Monitoring (Auditing)</h4>
-                                                        </div>
-                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_2_5" dangerouslySetInnerHTML={{ __html: apiData.header_2_2_5 }}>
-                                                        </div>
-                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
-                                                            <h4 className="text-primary">2.2.6 &nbsp; &nbsp; Reporting / Data Exporting</h4>
-                                                        </div>
-                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_2_6" dangerouslySetInnerHTML={{ __html: apiData.header_2_2_6 }}>
-                                                        </div>
-                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
-                                                            <h4 className="text-primary">2.2.7 &nbsp; &nbsp; External Content</h4>
-                                                        </div>
-                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_2_7" dangerouslySetInnerHTML={{ __html: apiData.header_2_2_7 }}>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
-                                            {apiData?.header_3_1 ? (
-                                            <>
-                                                <div>
-                                                    <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
-                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
-                                                            <h2 className="text-primary">3 &nbsp; &nbsp; Technology Security Review</h2>
-                                                        </div>
-                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_3" dangerouslySetInnerHTML={{ __html: apiData.header_3 }}>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <div className="col-xs-12 col-md-12 col-lg-12 p-t-2" id="activities_row">
-                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
-                                                            <button style={{ 'float': 'right', display: allData?.isContentEditable == "true" ? 'block' : 'none' }} type="button" id='addActivities' value='1234' className="btn btn-custom-primary" onClick={(e) => addActivities(e)}> + Add Activities</button>
-                                                            <h3 className="text-primary">3.1 &nbsp; &nbsp; Activities</h3>
-                                                        </div>
-
-                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_3_1" dangerouslySetInnerHTML={{ __html: apiData.header_3_1 }}>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <div className="col-xs-12 col-md-12 col-lg-12 p-t-2" id="testing_overview_row">
-                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
-                                                            <button style={{ float: 'right', display: allData?.isContentEditable == "true" ? 'block' : 'none' }} type="button" id='addTestingOverview' value='1234' className="btn btn-custom-primary" onClick={(e) => addTestingOverview(e)}> + Add Testing Overview</button>
-                                                            <h3 className="text-primary">3.2 &nbsp; &nbsp; Testing Overview</h3>
-                                                        </div>
-                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_3_2" dangerouslySetInnerHTML={{ __html: apiData.header_3_2 }}>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
-                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
-                                                            <h3 className="text-primary">3.3 &nbsp; &nbsp; Testing Approach</h3>
-                                                        </div>
-                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_3_3" dangerouslySetInnerHTML={{ __html: apiData.header_3_3 }}>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
-                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
-                                                            <h3 className="text-primary">3.4 &nbsp; &nbsp; High Level Security Requirements <br></br><span style={{fontSize:'10px',color:'red'}}>(Notes for comment section: [255 characters. Comment if the solution was partially implemented, not implemented, not assessed or there is a gap])</span></h3>
-                                                        </div>
-                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_3_4" dangerouslySetInnerHTML={{ __html: apiData.header_3_4 }}>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </>
-                                            ) : (
-                                            <>
-                                                <div>
-                                                    <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
-                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
-                                                            <h2 className="text-primary">3 &nbsp; &nbsp; Assessment Overview</h2>
-                                                        </div>
-                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_3" dangerouslySetInnerHTML={{ __html: apiData.header_3 }}>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <div className="col-xs-12 col-md-12 col-lg-12 p-t-2" id="testing_overview_row">
-                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
-                                                            <button style={{ float: 'right', display: allData?.isContentEditable == "true" ? 'block' : 'none' }} type="button" id='addTestingOverview' value='1234' className="btn btn-custom-primary" onClick={(e) => addTestingOverview(e)}> + Add Testing Overview</button>
-                                                            <h3 className="text-primary">3.1 &nbsp; &nbsp; Overview</h3>
-                                                        </div>
-                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_3_2" dangerouslySetInnerHTML={{ __html: apiData.header_3_2 }}>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
-                                                        <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
-                                                            <h3 className="text-primary">3.2 &nbsp; &nbsp; High Level Security Requirements<br></br><span style={{fontSize:'10px',color:'red'}}>(Notes for comment section: [255 characters. Comment if the solution was partially implemented, not implemented, not assessed or there is a gap])</span></h3>
-                                                        </div>
-                                                        <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_3_4" dangerouslySetInnerHTML={{ __html: apiData.header_3_4 }}>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </>
-                                            )}
-                                        </div>
-
-                                        <div>
-                                            <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
-                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
-                                                    <h2 className="text-primary">4 &nbsp; &nbsp;  Plan of Action and Milestone (POA&M)</h2>
-                                                </div>
-                                                <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_6" dangerouslySetInnerHTML={{ __html: apiData.header_6 }}>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div>
-                                            <div id="header_6_1" className="col-xs-12 col-md-12 col-lg-12 p-t-2">
-                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
-                                                    <h3 className="text-primary">4.1 &nbsp; &nbsp; High Risk Findings</h3>
-                                                </div>
-                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
-                                                    <div suppressContentEditableWarning={true}  id="header_6_1" dangerouslySetInnerHTML={{ __html: allData?.securityObservationsData.High }}>
-                                                </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div>
-                                            <div id="header_6_2" className="col-xs-12 col-md-12 col-lg-12 p-t-2">
-                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
-                                                    <h3 className="text-primary">4.2 &nbsp; &nbsp; Medium Risk Findings</h3>
-                                                </div>
-                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
-                                                    <div suppressContentEditableWarning={true}  id="header_6_2" dangerouslySetInnerHTML={{ __html:  allData?.securityObservationsData.Medium }}>
-                                                </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div>
-                                            <div id="header_6_3" className="col-xs-12 col-md-12 col-lg-12 p-t-2">
-                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
-                                                    <h3 className="text-primary">4.3 &nbsp; &nbsp; Low Risk Findings</h3>
-                                                </div>
-                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
-                                                    <div suppressContentEditableWarning={true} id="header_6_3" dangerouslySetInnerHTML={{ __html:  allData?.securityObservationsData.Low }}>
-                                                </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div>
-                                            <div className="col-xs-12 col-md-12 col-lg-12 p-t-2">
-                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
-                                                    <h2 className="text-primary">5 &nbsp;&nbsp; Additional Business Considerations</h2>
-                                                </div>
-                                                <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_7" dangerouslySetInnerHTML={{ __html: apiData.header_7 }}>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div>
-                                            <div style={{ display: allData?.isContentEditable == "true" ? 'flex' : 'none', justifyContent: 'flex-end', maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }} id='addSupportTeamRow' onClick={(e) => addSupportTeamRow(e)}>
-                                            {allData?.isContentEditable == 'true' && (<button style={{ float: 'right' }} type="button" className="btn btn-custom-primary"> + Add row</button>)}
-                                            </div>
-
-                                            {/* <div id="header_support_team" className="col-xs-12 col-md-12 col-lg-12 p-t-2" suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable}>
-                                                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
-                                                    <h2 className="text-primary">6 &nbsp; &nbsp; Key Contact Details</h2>
-                                                </div>
-                                            </div> */}
-
-                                            <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_support_team" dangerouslySetInnerHTML={{ __html: apiData.header_support_team }}>
-                                            </div>
-                                        </div>
-
-                                        <div style={{ display: allData?.sub_7_display_flex, justifyContent: 'flex-end', maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }} id='addAddendumSubsection' onClick={e => addAddendumSubsection(e)}>
-                                            <button style={{ float: 'right' }} type="button" className="btn btn-custom-primary"> + Add addendum subsection</button>
-                                        </div>
-
-                                        <div style={{ display: allData?.sub_7_display }} suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="addendum_header" dangerouslySetInnerHTML={{ __html: apiData.addendum_header ? apiData.addendum_header : addendumDefaultData }}>
-                                        </div>
-
-                                        {allData?.comments && (<div className="row">
-                                            <div className="col-xs-12 col-md-8 col-sm-12">
-                                                <input type="text" name="sar_comments" id="sar_comments" className="form-control" defaultValue="" />
-                                                <label htmlFor="sar_comments">Comments</label>
-                                            </div>
-                                        </div>)}
-                                        <div className="row">
-                                            <div className="col-xs-12 col-md-12">
-                                                <div className="text-xs-left m-b-20">
-                                                    {allData?.sar_save_as_draft && (<input type="submit" name="sar_save_as_draft" id="sar_save_as_draft" value="Save as draft" className="btn btn-custom-primary mx-1" onClick={e => submitDraftSar(e)} />)}
-
-                                                    {allData?.sar_clone_button && (<input type="submit" name="sar_clone_button" id="sar_clone_button" value="Re-clone SAR" className="btn btn-custom-primary mx-1" onClick={e => submitCloneSAR(e,allData?.assessmentId)} />)}
-
-                                                    {allData?.del_add_sub_7 && (
-                                                    <input type="submit" name="del_add_sub_7" id="del_add_sub_7" value={addAendumText} className="btn btn-custom-primary mx-1" onClick={e => delAddSub_7(e)} />)}
-
-                                                    {allData?.del_add_sub_1_1_1 && (
-                                                    <input type="submit" name="del_add_sub_1_1_1" id="del_add_sub_1_1_1" value={sub111text} className="btn btn-custom-primary mx-1" onClick={e => delAddSub_1_1_1(e)} />)}
-
-                                                    {allData?.sar_approve && (
-                                                    <input type="submit" name="sar_approve" id="sar_approve" value="Submit to solution team" className="btn btn-custom-info mx-1" onClick={e => submitDraftSar(e)} />)}
-
-                                                    {allData?.submit_sar && (
-                                                    <input type="submit" name="submit_sar" id="submit_sar" value="Finalize" className="btn btn-custom-info submit_draft_sar mx-1" onClick={e => submitDraftSar(e)} />)}
-
-                                                    {allData?.sar_save_send_as_draft && (
-                                                    <input type="submit" name="sar_save_as_draft" id="sar_save_send_as_draft" value="Save and return to final draft" className="btn btn-custom-primary submit_draft_sar" onClick={e => submitDraftSar(e)} />)}
-
-                                                    {allData?.solution_sar_approve && (
-                                                    <input type="submit" name="solution_sar_approve" id="solution_sar_approve" value="Approve" className="btn btn-custom-info submit_draft_sar" onClick={e => submitDraftSar(e)} />)}
-
-                                                    {allData?.solution_sar_reject && (
-                                                    <input type="submit" name="solution_sar_reject" id="solution_sar_reject" value="Request revisions" className="btn btn-custom-danger submit_draft_sar" onClick={e => submitDraftSar(e)} />)}
-
-                                                    {allData?.ana_sar_submit && (
-                                                    <input type="submit" name="ana_sar_submit" id="ana_sar_submit" value="Submit to coordinator" className="btn btn-custom-info submit_draft_sar" onClick={e => submitDraftSar(e)} />)}
-
-                                                    {allData?.ipg_sar_submit && (
-                                                    <input type="submit" name="ipg_sar_submit" id="ipg_sar_submit" value="Submit to leadership & the delegate" className="btn btn-custom-primary submit_draft_sar" onClick={e => submitDraftSar(e)} />)}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </CardBody>
-                            </Card>
-                        </Col>
-                        </div>
-                    </Row>
-
-                </Container>
-            </div>
-        </React.Fragment>
-    );
+import { format } from "date-fns";
+import Link from "next/link";
+import TitleBar from '@/components/TitleBar';
+
+const pentestOptions = [
+  { value: 0, label: "Yes" },
+  { value: 1, label: "No" },
+];
+
+type ResidualRiskOption = {
+  value: string;
+  label: string;
+  color: string;
 };
 
-export default ViewEditSar;
+const residualRiskOptions = [
+  { value: "LOW", label: "LOW", color: "#00B050" },
+  { value: "MEDIUM", label: "MEDIUM", color: "#FFC000" },
+  { value: "HIGH", label: "HIGH", color: "#FF0000" },
+];
+
+const sectionNumberMap: Record<string, string> = {
+  header_1: "1",
+  header_1_1: "1.1",
+  header_1_1_2: "1.1.2",
+  header_1_2: "1.2",
+  header_1_3: "1.3",
+  header_1_4: "1.4",
+  header_1_5: "1.5",
+  header_2: "2",
+  header_2_1: "2.1",
+  header_3: "3",
+  header_3_2: "3.1",
+  header_3_3: "3.3",
+  header_3_4: "3.2",
+  header_6: "4",
+  header_7: "5",
+  header_support_team: "6",
+};
+
+const headerNameMap: Record<string, string> = {
+  header_1: "Solution Overview",
+  header_1_1: "Risk Summary",
+  header_1_1_2: "Retest & Remediation",
+  header_1_2: "Solution Summary",
+  header_1_3: "Data Classification and Business Criticality",
+  header_1_4: "Users",
+  header_1_5: "Hosting",
+  header_2: "Architecture",
+  header_2_1: "High Level Technical Architecture Diagram",
+  header_3: "Assessment Overview",
+  header_3_2: "Overview",
+  header_3_4: "High Level Security Requirements",
+  header_6: "Plan of Action and Milestone (POA&M)",
+  header_7: "Additional Business Considerations",
+  header_support_team: "Key Contact Details",
+};
+
+
+export default function ReviewFindingsPage() {
+  const printRef = React.useRef(null);
+  const params = useParams();
+  const assessmentId = params?.assessmentId as string;
+  const [isLoading, setIsLoading] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [templateList, setTemplateList] = useState<any[]>([]);
+  const [templateError, setTemplateError] = useState("");
+
+  const [securitySolutionTeamComments, setSecuritySolutionTeamComments] = useState([
+    {
+      comments_by: "Lucas",
+      comments: "Reviewed risk mitigation for SQL injection",
+      comments_date: "2025-10-20T14:30:00",
+    },
+    {
+      comments_by: "Michael",
+      comments: "Approved compensating controls for XSS",
+      comments_date: "2025-10-21T09:15:00",
+    },
+  ]);
+  const [internalSecurityTeamComments, setInternalSecurityTeamComments] = useState([
+    {
+      comments_by: "Lucas",
+      comments: "Reviewed risk mitigation for SQL injection",
+      comments_date: "2025-10-20T14:30:00",
+    },
+    {
+      comments_by: "Michael",
+      comments: "Approved compensating controls for XSS",
+      comments_date: "2025-10-21T09:15:00",
+    },
+  ]);
+  const [securityArchitectSummary, setSecurityArchitectSummary] = useState([
+    {
+      summary: "Reviewed risk mitigation for SQL injection",
+      summary_date: "2025-10-20T14:30:00",
+    },
+    {
+      summary: "Approved compensating controls for XSS",
+      summary_date: "2025-10-21T09:15:00",
+    },
+  ]);
+  const PAGINATION_START = 1;
+  const PER_PAGE = 10;
+  const [status, setStatus] = useState("");
+  const [apiData, setApiData] = useState<any>([]);
+  const [uploadedImages, setUploadedImages] = useState<{ id: number; url: string }[]>([]);
+  const [allData, setAllData] = useState<any>();
+  const [sub111text, set111Text] = useState<any>('Add section 1_1_1 text');
+  const [addAendumText, setAddAendumText] = useState<any>('Add addendum');
+  const [addendumHeader, setAddendumHeader] = useState('1');
+  const [header111, setHeader111] = useState('1');
+
+  const header111DefaultData = "<div style='max-width: 83% !important;margin-left: auto;margin-right: auto;padding-top: 10px;'><h4 class='mt-2 text-[22px] font-normal text-kpmg-blue'>1.1.1 &nbsp&nbsp Unresolved High and Medium Risk Items</h4></div><div style='max-width: 83% !important;margin-left: auto;margin-right: auto;'><div><h5>The POA&M, section 6, covers the detail these unresolved risks, as well as the low and informational risk items not stated within this section.</h5></div></div><div class='header_1_1_1_subsection'><div><div style='max-width: 83% !important;margin-left: auto;margin-right: auto;padding-top: 10px;'><h4 class='text-[16px] font-normal text-kpmg-blue'>1.1.1.1 &nbsp&nbsp High or Medium Risk Item 1</h4></div><div style='max-width: 83% !important;margin-left: auto;margin-right: auto;'><div><h5>[Statement about the risk, remediation data and residual risk.]</h5></div><div><h5>[If no high or medium findings, select the Delete section 1_1_1 text button at the bottom of this page]</h5></div></div></div></div>"
+
+
+  const addendumDefaultData = `<div><div class="col-xs-12 col-md-12 col-lg-12 p-t-2"><div style="max-width: 83% !important;margin-left: auto;margin-right: auto;padding-top: 30px;"><h2 class="text-[34px] font-normal text-kpmg-blue">7 &nbsp&nbsp Addendum</h2></div></div></div><div class="addendum_subsection"><div class="col-xs-12 col-md-12 col-lg-12 p-t-2"><div style="max-width: 83% !important;margin-left: auto;margin-right: auto;padding-top: 10px;"><h3 class="text-[28px] text-kpmg-blue font-normal mb-2">7.1 &nbsp&nbsp Month DD, YYYY</h3></div><div style="max-width: 83% !important;margin-left: auto;margin-right: auto;"><div><h5>[Overview text to summarize changes made and additional testing completed.] </h5></div></div><div style="max-width: 83% !important;margin-left: auto;margin-right: auto;padding-top: 10px;"><button style="float: right;" type="button" class="cursor-pointer bg-kpmg-blue text-white rounded-md px-3 py-2 text-[14px] mb-2 addTestingOverview_7"> + Add Testing Overview</button><h4 class="text-[22px] text-kpmg-blue font-normal mt-1">7.1.1 &nbsp&nbsp Testing Overview</h4></div><div style="max-width: 83% !important;margin-left: auto;margin-right: auto;"><table class="table table-bordered mt-2"><thead><tr><th style="color:white;" >Event (or version)</th><th style="color:white;" >Test Date</th><th style="color:white;" >Outcome</th></tr></thead><tbody><tr><td rowspan="2">Penetration Test - <span>${allData?.solutionName}</span> environment</td><td rowspan="2"><span>${allData?.goLiveDate}</span></td><td>Result:</td></tr><tr><td>Scope:</td></tr><tr><td rowspan="2">Final Static Code Analysis - <span>${allData?.solutionName}</span> environment</td><td rowspan="2"><span>${allData?.goLiveDate}</span></td><td>Result:</td></tr><tr><td>Scope:</td></tr></tbody></table></div></div></div>`;
+
+  const addendumDefaultSubsectionData = `<div style="max-width: 83% !important;margin-left: auto;margin-right: auto;padding-top: 10px;"><h3 class="text-[28px] text-kpmg-blue font-normal">7.1 &nbsp&nbsp Month DD, YYYY</h3></div><div style="max-width: 83% !important;margin-left: auto;margin-right: auto;"><div><h5>[Overview text to summarize changes made and additional testing completed.] </h5></div></div><div style="max-width: 83% !important;margin-left: auto;margin-right: auto;padding-top: 10px;"><button style="display:block; float: right;" type="button" class="cursor-pointer bg-kpmg-blue text-white rounded-md px-3 py-2 text-[14px] mb-2 addTestingOverview_7"> + Add Testing Overview</button><h4 class="text-[22px] text-kpmg-blue font-normal">7.1.1 &nbsp&nbsp Testing Overview</h4></div><div style="max-width: 83% !important;margin-left: auto;margin-right: auto;"><table class="table table-bordered"><thead><tr><th style="color:white;" >Event (or version)</th><th style="color:white;" >Test Date</th><th style="color:white;" >Outcome</th></tr></thead><tbody><tr><td rowspan="2">Penetration Test - <span>${allData?.solutionName}</span> environment</td><td rowspan="2"><span>${allData?.goLiveDate}</span></td><td>Result:</td></tr><tr><td>Scope:</td></tr><tr><td rowspan="2">Final Static Code Analysis - <span>${allData?.solutionName}</span> environment</td><td rowspan="2"><span>${allData?.goLiveDate}</span></td><td>Result:</td></tr><tr><td>Scope:</td></tr></tbody></table></div>`;
+
+
+  // let initialValues = {
+  //     sarCloneAction: "",
+  //     igpCloneId: "",
+  //     id: id,
+  // };
+
+  // const [form, setForm] = useState(initialValues);
+  // const [formErrors, setFormErrors] = useState({});
+
+  // const validate = (name, value) => {
+  //     switch (name) {
+  //         case "sarCloneAction":
+  //             if (minMaxLength(value, 1)) {
+  //                 formErrors[name] = `Please select a option.`;
+  //             } else {
+  //                 delete formErrors[name];
+  //             }
+
+  //             setFormErrors(formErrors);
+  //             setForm({ ...form, sarCloneAction: value });
+  //             break;
+
+  //         case "igpCloneId":
+  //             if (minMaxLength(value, 1)) {
+  //                 toggleAlertModal()
+  //                 formErrors[name] = `Please search and select.`;
+  //             } else {
+  //                 delete formErrors[name];
+  //             }
+
+  //             setFormErrors(formErrors);
+  //             setForm({ ...form, igpCloneId: value });
+  //             break;
+
+  //         default:
+  //             break;
+  //     }
+  // };
+
+  // const validateOnSubmit = () => {
+  //     const newErrors = {};
+  //     for (let item in form) {
+  //         validate(item, form[item]);
+  //     }
+  //     return newErrors;
+  // };
+
+  // const handleSubmit = (e) => {
+  //     e.preventDefault();
+  //     validateOnSubmit();
+  //     if (Object.entries(formErrors || {}).length > 0) {
+  //         console.log('abc')
+  //     } else {
+  //         let formData = new FormData();
+  //         for (let value in form) {
+  //             formData.append(value, form[value]);
+  //         }
+  //         formData.append("sgpId", sgpId);
+
+  //         setIsLoading(true)
+  //     }
+  // };
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [showToast, setShowToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const router = useRouter();
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(PAGINATION_START);
+  const [pageSize, setPageSize] = useState(PER_PAGE);
+  const [totalPages, setTotalPages] = useState(0);
+  const [totalRecords, setTotalRecords] = useState(0);
+  const [buttonStatus, setButtonStatus] = useState<any>({});
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const [sortColumn, setSortColumn] = useState("");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+
+  const searchParams = useSearchParams();
+  const owner = searchParams.get("owner");
+
+  const removeFile = (index: number) => {
+    const updatedFiles = selectedFiles.filter((_, i) => i !== index);
+    setSelectedFiles(updatedFiles);
+
+    // Reset input to reflect updated state
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const customStyles: StylesConfig<ResidualRiskOption, false> = {
+    control: (base) => ({
+      ...base,
+      borderColor: "#ccc",
+      paddingTop: 2,
+      paddingBottom: 2,
+    }),
+    option: (base, state) => ({
+      ...base,
+      color: state.data.color,
+      backgroundColor: state.isFocused ? "#f0f0f0" : "white",
+    }),
+    singleValue: (base, state) => ({
+      ...base,
+      color: state.data.color,
+      fontWeight: "bold",
+    }),
+  };
+
+  // Notification helper
+  const notify = (message: string, type: "success" | "error" | "info" = "info") => {
+    // Implement your notification system here
+    console.log(`[${type}] ${message}`);
+    setError(type === "error" ? message : "");
+    if (type === "success" || type === "info") {
+      setTimeout(() => setError(""), 3000);
+    }
+  };
+
+  const getSarData = async () => {
+    setIsLoading(true)
+    const { data } = await callBackend(`sar/get-testing-sar-data/${assessmentId}/`);
+    if (data.status) {
+      toast.success(data.message)
+      setIsLoading(false)
+      let sarData: any = {};
+      Object.keys(data.data.editSarTemplate).map((key, index) => {
+        sarData[key] = htmlPurify(data.data.editSarTemplate[key]);
+      })
+
+      setApiData(sarData);
+      setAllData(data.data);
+      set111Text(data.data.sub_1_1_1_btn_val);
+      setAddAendumText(data.data.sub_7_btn_val)
+      setAddendumHeader(data.data.isAddendumSec)
+      setHeader111(data.data.isHeader111Sec)
+      setIsLoading(false)
+    } else {
+      toast.error(data.message);
+      setIsLoading(false)
+      return;
+    }
+  }
+
+  useEffect(() => {
+    getSarData()
+
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.classList.contains("addTestingOverview_7")) {
+        addTestingOverview_7(e);
+      }
+    };
+
+    document.addEventListener("click", handleClick, true);
+    return () => {
+      document.removeEventListener("click", handleClick, true);
+    };
+
+  }, [assessmentId]);
+
+  const add_1_1_1_subsection = (e: any) => {
+    let header_1_1_1_subsection_div = htmlPurify(document.getElementsByClassName("header_1_1_1_subsection")[0].innerHTML);
+    document.querySelector(".header_1_1_1_subsection")?.insertAdjacentHTML('beforeend', `<div">${header_1_1_1_subsection_div}</div>`);
+  }
+
+  const addAddendumSubsection = (e: any) => {
+    const container = document.querySelector(".addendum_subsection");
+    if (container) {
+      container.insertAdjacentHTML('beforeend', `<br><div class="col-xs-12 col-md-12 col-lg-12 p-t-2">${addendumDefaultSubsectionData}</div>`);
+    } else {
+      console.warn("Element .addendum_subsection not found");
+    }
+  };
+
+  const addTestingOverview = (e: React.MouseEvent<HTMLButtonElement>) => {
+    // Find the table you want to append rows to
+    const tableEl = document.querySelector(".table.table-bordered");
+    if (!tableEl) return;
+
+    const tbody = tableEl.getElementsByTagName("tbody")[0];
+    if (!tbody) return;
+
+    // Count existing rows to generate unique radio names
+    const trCount = tbody.getElementsByTagName("tr").length;
+
+    const newRow = `
+      <tr>
+        <td rowspan="2">
+          Add event here
+          <div>
+            <input type="radio" name="radio_button_pt_${trCount}" class="radio_pt" value="radio_${trCount}_pt" checked="checked">
+            <label for="radio_${trCount}_pt">In-house</label> 
+            <input type="radio" name="radio_button_pt_${trCount}" class="radio_pt" value="radio_${trCount + 1}_pt">
+            <label for="radio_${trCount + 1}_pt">Third Party</label>
+          </div>
+        </td>
+        <td rowspan="2">Add test date here</td>
+        <td>Result:</td>
+      </tr>
+      <tr>
+        <td>Scope:</td>
+      </tr>
+    `;
+
+    // Append new rows at the end of tbody
+    tbody.insertAdjacentHTML("beforeend", newRow);
+  };
+
+  const addSupportTeamRow = (event: any) => {
+    let newRow = "<tr>";
+    newRow += "<td>Add role</td>";
+    newRow += "<td>Add name</td>";
+    newRow += "<td>Add email address</td>";
+    newRow += "</tr>";
+    document.getElementById("support_team_row")?.getElementsByTagName("tbody")[0].insertAdjacentHTML('beforeend', newRow)
+  }
+
+  const delAddSub_7 = (e: any) => {
+    // e.preventDefault();
+    const header = document.querySelector('#addendum_header');
+
+    if (header instanceof HTMLElement) {
+      if (getComputedStyle(header).display === 'none') {
+        setAddendumHeader('1');
+        header?.setAttribute("style", "display:block");
+        document.getElementById("addAddendumSubsection")?.setAttribute("style", "display: flex; justify-content: flex-end; max-width: 83%; margin-left: auto; margin-right: auto; padding-top: 30px;");
+        setAddAendumText('Delete addendum')
+      } else {
+        setAddendumHeader('2');
+        // document.getElementById("addendum_header")?.setAttribute("style", "display:none");
+        header?.setAttribute("style", "display:none");
+        document.getElementById("addAddendumSubsection")?.setAttribute("style", "display:none");
+        setAddAendumText('Add addendum')
+      }
+    }
+  }
+
+  const delAddSub_1_1_1 = (e: any) => {
+    e.preventDefault();
+    const header = document.querySelector('#header_1_1_1');
+    if (header instanceof HTMLElement) {
+      if (getComputedStyle(header).display === 'none') {
+        setHeader111('1');
+        document.getElementById("header_1_1_1")?.setAttribute("style", "display:block");
+        document.getElementById("add_1_1_1_subsection")?.setAttribute("style", "display:block");
+        set111Text("Delete section 1_1_1 text");
+        // document.getElementById("header_1_1_2_txt").innerHTML = '1.1.2 &nbsp; &nbsp; Retest and Remediation';
+      } else {
+        setHeader111('2');
+        document.getElementById("header_1_1_1")?.setAttribute("style", "display:none");
+        document.getElementById("add_1_1_1_subsection")?.setAttribute("style", "display:none");
+        set111Text('Add section 1_1_1 text');
+        // document.getElementById("header_1_1_2_txt")?.innerHTML = '1.1.1 &nbsp; &nbsp; Retest and Remediation';
+      }
+    }
+  }
+
+
+  const addTestingOverview_7 = (e: any) => {
+    if (e.target.classList.contains("addTestingOverview_7")) {
+      e.target.parentNode.nextSibling.getElementsByTagName("tbody")[0].insertAdjacentHTML('beforeend', `<tr><td rowspan="2">Add event here</td><td rowspan="2">Add test date here</td><td>Result:</td></tr><tr><td>Scope:</td></tr>`)
+    }
+  }
+
+  const clickHandler = (e: MouseEvent) => {
+    const el = (e.target as HTMLElement).closest("select");
+    if (el && (e.currentTarget as HTMLElement).contains(el)) {
+      const elements = document.querySelector(".overall_residual_risk");
+      const elementsFirstPage = document.querySelector(".comb_residual_view");
+
+      if (el.value === "1") {
+        const html = `<div><h4 align="center"><b><span style="color: #00B050;">LOW&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></b></h4></div>`;
+        if (elements) elements.innerHTML = html;
+        if (elementsFirstPage) elementsFirstPage.innerHTML = html;
+      } else if (el.value === "2") {
+        const html = `<div><h4 align="center"><b><span style="color: #FFC000;">MEDIUM&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></b></h4></div>`;
+        if (elements) elements.innerHTML = html;
+        if (elementsFirstPage) elementsFirstPage.innerHTML = html;
+      } else if (el.value === "3") {
+        const html = `<div><h4 align="center"><b><span style="color: #FF0000;">HIGH&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></b></h4></div>`;
+        if (elements) elements.innerHTML = html;
+        if (elementsFirstPage) elementsFirstPage.innerHTML = html;
+      }
+    }
+  };
+
+  useEffect(() => {
+    document.addEventListener("click", clickHandler, true);
+    return () => {
+      document.removeEventListener("click", clickHandler, true);
+    };
+  }, []);
+
+  const addRevisionHistory = (e: any) => {
+
+    var revHisRow = "<tr>";
+    revHisRow += "<td>Add version</td>";
+    revHisRow += "<td>Add author</td>";
+    revHisRow += "<td>Add date</td>";
+    revHisRow += "<td>Add revision</td>";
+    revHisRow += "</tr>";
+    document.getElementById("reviewer_his_row")?.getElementsByTagName("tbody")[0].insertAdjacentHTML('beforeend', revHisRow)
+
+  }
+
+  const addReviewerRow = (e: any) => {
+
+    var revRow = "<tr>";
+    revRow += "<td>Add reviewer</td>";
+    revRow += "<td>Add date reviewed</td>";
+    revRow += "</tr>";
+    document.getElementById("reviewer_row")?.getElementsByTagName("tbody")[0].insertAdjacentHTML('beforeend', revRow)
+
+  }
+
+
+  const handleImageUpload = (templateId: number, files: FileList | null) => {
+    if (!files) return;
+
+    const newImages = Array.from(files).map((file) => ({
+      id: templateId,
+      url: URL.createObjectURL(file),
+    }));
+
+    setUploadedImages((prev) => [...prev, ...newImages]);
+  };
+
+  const handleRemoveImage = (url: string) => {
+    setUploadedImages((prev) => prev.filter((img) => img.url !== url));
+  };
+
+  const getHeaderDepth = (key: string): number => {
+    return key.split("_").length - 1; // e.g. header_1_1_2 → depth 3
+  };
+
+  function htmlPurify(dirtyString: any) {
+    let cleanHtml = DOMPurify.sanitize(dirtyString);
+    return cleanHtml;
+  }
+
+  const submitDraftSar = async (event: any) => {
+    // event.preventDefault();
+    document.addEventListener("click", (e: any) => {
+      if (e.target.classList.contains("addTestingOverview_7")) {
+        addTestingOverview_7(e)
+      }
+    }, true);
+    //Remove data before submit
+    let securityStatus = document.querySelectorAll('.header_3_4_security_status');
+    securityStatus.forEach(data => {
+      data.innerHTML = ''
+    });
+
+    let riskSumaryDropdown = document.querySelectorAll('.overall_residual_edit')
+    riskSumaryDropdown.forEach(data => {
+      data.innerHTML = ''
+    });
+
+    let combResidualEdit = document.querySelectorAll('.comb_residual_edit')
+    combResidualEdit.forEach(data => {
+      data.innerHTML = ''
+    });
+
+    let e1 = document.getElementById("addTestingOverview")
+    if (e1) {
+      e1.remove();
+    }
+    let e2 = document.getElementById("addActivities")
+    if (e2) {
+      e2.remove();
+    }
+    let el3 = document.getElementsByClassName("addTestingOverview_7");
+    if (el3[0] instanceof HTMLElement) {
+      el3[0].style.display = 'none';
+    }
+    let addTestingOverviewNodes = document.querySelectorAll('.addTestingOverview_7');
+    addTestingOverviewNodes.forEach(data => {
+      data.innerHTML = ''
+    });
+
+    //Remove data end
+
+    let header_1 = htmlPurify(document.getElementById("header_1")?.innerHTML);
+    let header_1_1 = htmlPurify(document.getElementById("header_1_1")?.innerHTML);
+    let header_1_1_1 = htmlPurify(document.getElementById("header_1_1_1")?.innerHTML);
+    let header_1_1_2 = htmlPurify(document.getElementById("header_1_1_2")?.innerHTML);
+    let header_1_2 = htmlPurify(document.getElementById("header_1_2")?.innerHTML);
+    let header_1_3 = htmlPurify(document.getElementById("header_1_3")?.innerHTML);
+    let header_1_4 = htmlPurify(document.getElementById("header_1_4")?.innerHTML);
+    let header_1_5 = htmlPurify(document.getElementById("header_1_5")?.innerHTML);
+    let header_2 = htmlPurify(document.getElementById("header_2")?.innerHTML);
+    let header_2_1 = htmlPurify(document.getElementById("header_2_1")?.innerHTML);
+    let header_2_2 = '';
+    let header_2_2_1 = '';
+    let header_2_2_2 = '';
+    let header_2_2_3 = '';
+    let header_2_2_4 = '';
+    let header_2_2_5 = '';
+    let header_2_2_6 = '';
+    let header_2_2_7 = '';
+    if (document.getElementById("header_2_2_1")) {
+      header_2_2 = htmlPurify(document.getElementById("header_2_2")?.innerHTML);
+      header_2_2_1 = htmlPurify(document.getElementById("header_2_2_1")?.innerHTML);
+      header_2_2_2 = htmlPurify(document.getElementById("header_2_2_2")?.innerHTML);
+      header_2_2_3 = htmlPurify(document.getElementById("header_2_2_3")?.innerHTML);
+      header_2_2_4 = htmlPurify(document.getElementById("header_2_2_4")?.innerHTML);
+      header_2_2_5 = htmlPurify(document.getElementById("header_2_2_5")?.innerHTML);
+      header_2_2_6 = htmlPurify(document.getElementById("header_2_2_6")?.innerHTML);
+      header_2_2_7 = htmlPurify(document.getElementById("header_2_2_7")?.innerHTML);
+    }
+    let header_3 = htmlPurify(document.getElementById("header_3")?.innerHTML);
+    let header_3_1 = '';
+    let header_3_3 = '';
+    if (document.getElementById("header_3_1")) {
+      header_3_1 = htmlPurify(document.getElementById("header_3_1")?.innerHTML);
+      header_3_3 = htmlPurify(document.getElementById("header_3_3")?.innerHTML);
+    }
+    let header_3_2 = htmlPurify(document.getElementById("header_3_2")?.innerHTML);
+    let header_3_4 = htmlPurify(document.getElementById("header_3_4")?.innerHTML);
+    let header_6 = htmlPurify(document.getElementById("header_6")?.innerHTML);
+    let header_7 = htmlPurify(document.getElementById("header_7")?.innerHTML);
+    let header_support_team = htmlPurify(document.getElementById("header_support_team")?.innerHTML);
+    let addendum_header = htmlPurify(document.getElementById("addendum_header")?.innerHTML);
+
+    let sar_comments: any = document.getElementById("sar_comments")
+    if (sar_comments) {
+      sar_comments = sar_comments.value
+    }
+
+    let formData = new FormData();
+    let data1: any = {
+      'header_1': header_1,
+      'header_1_1': header_1_1,
+      'header_1_1_1': header_1_1_1,
+      'header_1_1_2': header_1_1_2,
+      'header_1_2': header_1_2,
+      'header_1_3': header_1_3,
+      'header_1_4': header_1_4,
+      'header_1_5': header_1_5,
+      'header_2': header_2,
+      'header_2_1': header_2_1,
+      'header_2_2': header_2_2,
+      'header_2_2_1': header_2_2_1,
+      'header_2_2_2': header_2_2_2,
+      'header_2_2_3': header_2_2_3,
+      'header_2_2_4': header_2_2_4,
+      'header_2_2_5': header_2_2_5,
+      'header_2_2_6': header_2_2_6,
+      'header_2_2_7': header_2_2_7,
+      'header_3': header_3,
+      'header_3_1': header_3_1,
+      'header_3_2': header_3_2,
+      'header_3_3': header_3_3,
+      'header_3_4': header_3_4,
+      'header_6': header_6,
+      'header_7': header_7,
+      'header_support_team': header_support_team,
+      'addendum_header': addendum_header,
+      'is_addendum_sec': addendumHeader,
+      'is_header_1_1_1_sec': header111,
+    }
+
+    if (apiData?.header_first_page) {
+      let header_first_page = htmlPurify(document.getElementById("header_first_page")?.innerHTML);
+      data1.header_first_page = header_first_page
+    }
+
+    if (apiData?.header_revision_second_page) {
+      let header_revision_second_page = htmlPurify(document.getElementById("header_revision_second_page")?.innerHTML);
+      let header_reviewer_second_page = htmlPurify(document.getElementById("header_reviewer_second_page")?.innerHTML);
+      data1.header_revision_second_page = header_revision_second_page
+      data1.header_reviewer_second_page = header_reviewer_second_page
+    }
+
+    formData.append("sgpId", assessmentId)
+    formData.append("sarTemplateData", JSON.stringify([data1]))
+    formData.append("submitId", event.target.id)
+    formData.append("sarComments", sar_comments)
+
+    const overallRisk: any = document.querySelector<HTMLElement>('.overall_residual_risk')?.innerText;
+    formData.append("overallRisk", overallRisk)
+    setIsLoading(true)
+    const { data } = await callBackendFormData(`testing/generate-sar-template/`, "POST", formData);
+    if (data.status) {
+      setIsLoading(false);
+      toast.success(data.message)
+      if (event.target.id == "submit_sar") {
+        setTimeout(() => {
+          router.push('/requests')
+        }, 800)
+      } else {
+        window.location.reload();
+      }
+    } else {
+      toast.error(data.message);
+      setIsLoading(false)
+      return;
+    }
+  }
+
+  const submitCloneSAR = (assessmentID: any) => {
+    window.open(`${window.location.origin}/testing/${assessmentID}/testing-conducting-security/no`, "_blank");
+  }
+
+
+  useEffect(() => {
+    if (allData?.isContentEditable) {
+      const isContentEditable = allData?.isContentEditable;
+      if (isContentEditable === 'true') {
+        const dropdown = "<select class='w-full border border-gray-300 rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 header_security_status'><option value='0'>Select Status</option><option value='1' style='background-color:#A8D08D'>Implemented</option><option value='2' style='background-color:#FFE599'>Partially Implemented</option><option value='3' style='background-color:#F4B083'>Gap</option><option value='4' style='background-color:#D0CECE'>Not Assessed</option><option value='5' style='background-color:#FFFFFF'>Not Applicable</option></select>"
+
+        let securityStatus = document.querySelectorAll('.header_3_4_security_status');
+        securityStatus.forEach(data => {
+          data.innerHTML = dropdown
+        });
+
+        const residualRiskOverall = '<select class="bg-white border border-gray-300 rounded px-3 py-2 w-full"><option style="color: #00B050;" value="1"><b>LOW</b></option><option style="color: #FFC000;" value="2"><b>MEDIUM</b></option><option style="color: #FF0000;" value="3"><b>HIGH</b></option></select>';
+        let riskSumaryDropdown = document.querySelectorAll('.overall_residual_edit')
+        riskSumaryDropdown.forEach(data => {
+          data.innerHTML = residualRiskOverall
+        });
+
+        const residualRiskFirstPage = '<select class="bg-white border border-gray-300 rounded px-3 py-2 w-full"><option style="color: #00B050;" value="1"><b>LOW</b></option><option style="color: #FFC000;" value="2"><b>MEDIUM</b></option><option style="color: #FF0000;" value="3"><b>HIGH</b></option></select>';
+        let riskSumaryDropdownFirstPage = document.querySelectorAll('.comb_residual_edit')
+        riskSumaryDropdownFirstPage.forEach(data => {
+          data.innerHTML = residualRiskFirstPage
+        });
+
+        let el2 = document.getElementById("header_2_1_img");
+        if (el2) {
+          el2.innerHTML = "<input type='file' multiple/>";
+        }
+
+        const el3 = document.getElementsByClassName("addTestingOverview_7");
+
+        if (el3[0]) {
+          const firstEl = el3[0] as HTMLElement;
+          firstEl.style.display = "block";
+
+          const addTestingOverview_7 = document.querySelectorAll(".addTestingOverview_7");
+          addTestingOverview_7.forEach((data) => {
+            (data as HTMLElement).innerHTML = " + Add Testing Overview ";
+          });
+        }
+
+      }
+    }
+
+    let el2 = document.getElementById("header_2_1_img");
+
+    if (el2) {
+      (el2 as HTMLInputElement).onchange = function (e) {
+        const input = e.target as HTMLInputElement | null;
+
+        if (!input || !input.files) return;
+
+        const chosenFiles = Array.from(input.files);
+        handleUploadFiles(chosenFiles);
+      };
+    }
+
+    const elmns = document.querySelectorAll('.header_3_4_security_status');
+
+    elmns.forEach((el) => {
+      el.addEventListener('change', (e: Event) => {
+        const select = e.target as HTMLSelectElement | null;
+        if (!select) return;
+
+        const txt = select.options[select.selectedIndex].text;
+        const status_val = select.value;
+
+        const td_pre = select.closest("td") as HTMLTableCellElement | null;
+        if (!td_pre) return;
+
+        const div = td_pre.getElementsByTagName("div")[0] as HTMLElement;
+
+        // This line FIXED:
+        select.options[select.selectedIndex].text = txt;
+
+        if (status_val === '1') {
+          td_pre.style.backgroundColor = "#A8D08D";
+          div.textContent = txt;
+        } else if (status_val === '2') {
+          td_pre.style.backgroundColor = "#FFE599";
+          div.textContent = txt;
+        } else if (status_val === '3') {
+          td_pre.style.backgroundColor = "#F4B083";
+          div.textContent = txt;
+        } else if (status_val === '4') {
+          td_pre.style.backgroundColor = "#D0CECE";
+          div.textContent = txt;
+        } else if (status_val === '5') {
+          td_pre.style.backgroundColor = "#FFFFFF";
+          div.textContent = txt;
+        } else {
+          td_pre.style.backgroundColor = "#FFFFFF";
+          div.textContent = "-";
+        }
+      });
+    });
+
+
+    // Focus on edit
+
+    document.addEventListener(
+      "focus",
+      (e: FocusEvent) => {
+        const target = e.target as HTMLElement | null;
+        if (!target) return;
+
+        const isContentEditable = target.getAttribute("contenteditable");
+        if (isContentEditable === "true") {
+          target.style.outline = "1px solid black";
+        }
+      },
+      true
+    );
+
+    document.addEventListener(
+      "blur",
+      (e: FocusEvent) => {
+        const target = e.target as HTMLElement | null;
+        if (!target) return;
+
+        const isContentEditable = target.getAttribute("contenteditable");
+
+        if (isContentEditable === "true") {
+          target.style.outline = "0px solid transparent";
+        }
+      },
+      true
+    );
+
+    const elements1 = document.querySelectorAll('input[name="kpmg"]');
+
+    elements1.forEach((element) => {
+      element.addEventListener('change', (e: Event) => {
+        const input = e.target as HTMLInputElement | null;
+        if (!input) return;
+
+        if (input.checked) {
+          input.setAttribute("checked", "checked");
+        } else {
+          input.removeAttribute("checked");
+        }
+      });
+    });
+
+
+
+    const elements2 = document.querySelectorAll('input[name="business_cri"]');
+
+    elements2.forEach((element) => {
+      element.addEventListener('change', (e: Event) => {
+        const input = e.target as HTMLInputElement | null;
+        if (!input) return;
+
+        if (input.checked) {
+          input.setAttribute("checked", "checked");
+        } else {
+          input.removeAttribute("checked");
+        }
+      });
+    });
+
+    const elements = document.querySelectorAll('.users_data');
+
+    elements.forEach((element) => {
+      element.addEventListener('change', (e: Event) => {
+        const input = e.target as HTMLInputElement | null;
+        if (!input) return;
+
+        if (input.checked) {
+          input.setAttribute("checked", "checked");
+        } else {
+          input.removeAttribute("checked");
+        }
+      });
+    });
+
+
+
+    const elements3 = document.querySelectorAll('.radio_fs');
+
+    elements3.forEach((element) => {
+      element.addEventListener('change', (e: Event) => {
+        const input = e.target as HTMLInputElement | null;
+        if (!input) return;
+
+        const group = document.getElementsByName(input.name);
+
+        group.forEach((el) => {
+          (el as HTMLInputElement).removeAttribute("checked");
+        });
+
+        input.setAttribute("checked", "checked");
+      });
+    });
+
+    const elements4 = document.querySelectorAll('.radio_pt');
+
+    elements4.forEach((element) => {
+      element.addEventListener('change', (e: Event) => {
+        const input = e.target as HTMLInputElement | null;
+        if (!input) return;
+
+        const group = document.getElementsByName(input.name);
+
+        // Remove "checked" from all items in the group
+        group.forEach((el) => {
+          (el as HTMLInputElement).removeAttribute("checked");
+        });
+
+        // Set "checked" on the currently selected item
+        input.setAttribute("checked", "checked");
+      });
+    });
+  })
+
+  const [uploadedFiles, setUploadedFiles] = useState([]);
+  const [fileLimit, setFileLimit] = useState(false);
+  const [fileName, setFileName] = useState([]);
+  const [imageUrl, setImageUrl] = useState('');
+  const handleUploadFiles = async (files: any) => {
+
+    const uploaded: any = [];
+
+    files.some((file: any) => {
+      if (uploaded.findIndex((f: any) => f.name === file.name) === -1) {
+        uploaded.push(file);
+      }
+    });
+
+    setUploadedFiles(uploaded);
+
+    let formData = new FormData();
+    if (uploaded.length) {
+      for (let i = 0; i < uploaded.length; i++) {
+
+        let fileCheckName = uploaded[i].name;
+        let fileCheckType = uploaded[i].type;
+        var allowedFileType = ['image/png', 'image/jpeg', 'image/jpg'];
+        var allowedFileName = ['png', 'jpeg', 'jpg'];
+
+        if (allowedFileType.indexOf(fileCheckType) > -1 && allowedFileName.indexOf(fileCheckName.split('.').pop().toLowerCase()) > -1) {
+          formData.append("architectureImage", uploaded[i]);
+        } else {
+          toast.error("Only JPEG, PNG, and JPG images are allowed.")
+          return false;
+        }
+      }
+    }
+    formData.append("sgpId", assessmentId)
+
+    setIsLoading(true)
+    const { data } = await callBackendFormData(`testing/upload-arc-image/`, "POST", formData);
+    if (data.status) {
+      setIsLoading(false);
+      let fileName = data.data.fileName.split(";")
+      let mainFolder = data.data.main
+      let otherFolder = data.data.other
+      let abc = document.getElementById("header_2_1_img_show")?.innerHTML;
+      console.log(process.env.NEXT_PUBLIC_SERVE_FILES + "/" + mainFolder + "123" + fileName[0] + "/" + otherFolder)
+      fileName.map((data1: any, index: any) => {
+        abc += '<img class="architecture_img" src="' + process.env.NEXT_PUBLIC_SERVE_FILES + "/" + mainFolder + "123" + "/" + data1 + "/" + otherFolder + '" style="width:100%; display: block; margin-left: auto; margin-right: auto;" /><br>';
+      })
+
+      const el: any = document.getElementById("header_2_1_img_show");
+      if (el) {
+        el.innerHTML = abc;
+      }
+
+      toast.success(data.message)
+    } else {
+      toast.error(data.message);
+      setIsLoading(false)
+      return;
+    }
+  };
+
+  const addActivities = (event: Event) => {
+    const id = (event.target as HTMLElement).id;
+
+    const newRow = `
+        <tr>
+            <td>Add topic name here</td>
+            <td>Add time frame here</td>
+        </tr>
+    `;
+
+    const tbody = document.querySelector("#activities_row tbody");
+    if (tbody) {
+      tbody.insertAdjacentHTML("beforeend", newRow);
+    }
+  };
+
+
+
+  // Default fallback if no findings
+
+  const showSuccessToast = () => {
+    toast.success("Observation tested successfully", {
+      className: "animate-toast-slide-in",
+    });
+  };
+
+  // Fetch data dynamically from API
+
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+
+  const securitysolutionteamcolumns = [
+    {
+      key: "comments_by",
+      label: "Comments By",
+    },
+    {
+      key: "comments",
+      label: "Comments",
+    },
+    {
+      key: "comments_date",
+      label: "Comments date",
+      render: (val: any) => (
+        formatLocalDateTime(val)
+      )
+    },
+  ];
+
+  const internalsecurityteamcolumns = [
+    {
+      key: "comments_by",
+      label: "Comments By",
+    },
+    {
+      key: "comments",
+      label: "Comments",
+    },
+    {
+      key: "comments_date",
+      label: "Comments date",
+      render: (val: any) => (
+        formatLocalDateTime(val)
+      )
+    },
+  ];
+
+  const securityArchitectcolumns = [
+    {
+      key: "summary",
+      label: "Summary",
+    },
+    {
+      key: "summary_date",
+      label: "Summary date",
+      render: (val: any) => (
+        formatLocalDateTime(val)
+      )
+    },
+  ];
+
+  const formData = new FormData();
+  formData.append('sgpId', allData?.sgpId)
+
+  return (
+    <>
+      <div className="px-2 md:px-6 lg:px-6 py-4 space-y-6 bg-neutral-50 dark:bg-neutral-950">
+        <TitleBar projectName={allData?.projectName} assessmentType={allData?.assessmentType} />
+        {allData?.isSarTemplateClone == 'yes' && (
+          <div className="w-full bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl shadow-sm px-6 pt-4 pb-6 text-[13px]">
+            <h2 className="text-[18px] text-slate-800 dark:text-white mb-4 font-semibold">
+              Comments from security team and solution team
+            </h2>
+
+            <div className="overflow-x-auto rounded-md">
+              <table className="w-full border-collapse">
+                <thead className="bg-[#f2f8ff] dark:bg-slate-800">
+                  <tr>
+                    <th className="px-6 py-4 text-left font-bold text-[#2563eb] dark:text-[#adcbfb] text-[13px]">
+                      {allData.isSarTemplateCloneMsg}
+                    </th>
+                  </tr>
+                </thead>
+              </table>
+            </div>
+          </div>
+        )}
+        {allData?.sarLogComments && (
+          <div className="w-full bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl shadow-sm px-6 pt-4 pb-6 text-[13px]">
+            <h2 className="text-[18px] text-slate-800 dark:text-white mb-4 font-semibold">
+              Comments from security team and solution team
+            </h2>
+
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse">
+                <thead className="border-b border-blue-100 dark:border-slate-700 bg-[#f2f8ff] dark:bg-slate-800">
+                  <tr>
+                    <th className="px-6 py-4 text-left font-bold uppercase text-[#2563eb] dark:text-[#adcbfb] text-[13px]">
+                      Comments By
+                    </th>
+                    <th className="px-6 py-4 text-left font-bold uppercase text-[#2563eb] dark:text-[#adcbfb] text-[13px]">
+                      Comments
+                    </th>
+                    <th className="px-6 py-4 text-left font-bold uppercase text-[#2563eb] dark:text-[#adcbfb] text-[13px]">
+                      Comments Date
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
+                  {allData.sarLogComments.length > 0 ? (
+                    allData.sarLogComments.map((data: any, index: any) => (
+                      <tr
+                        key={index}
+                        className="transition-colors hover:bg-gray-50 dark:hover:bg-slate-800"
+                      >
+                        <td className="px-6 py-3 text-slate-700 dark:text-slate-200">
+                          {`${data.first_name} ${data.last_name} (${data.name})`}
+                        </td>
+                        <td className="px-6 py-3 text-slate-700 dark:text-slate-200">
+                          {data.comments}
+                        </td>
+                        <td className="px-6 py-3 text-slate-700 dark:text-slate-200">
+                          {format(new Date(data.created_date), "dd MMM yyyy")}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td
+                        colSpan={3}
+                        className="px-6 py-10 text-center text-sm text-slate-400 dark:text-slate-500"
+                      >
+                        No Record Found
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {allData?.securityLogComments && (
+          <div className="w-full bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl shadow-sm px-6 pt-4 pb-6 text-[13px]">
+            <h2 className="text-[18px] text-slate-800 dark:text-white mb-4 font-semibold">
+              Internal security team comments
+            </h2>
+
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse">
+                <thead className="border-b border-blue-100 dark:border-slate-700 bg-[#f2f8ff] dark:bg-slate-800">
+                  <tr>
+                    <th className="px-6 py-4 text-left font-bold uppercase text-[#2563eb] dark:text-[#adcbfb] text-[13px]">
+                      Comments By
+                    </th>
+                    <th className="px-6 py-4 text-left font-bold uppercase text-[#2563eb] dark:text-[#adcbfb] text-[13px]">
+                      Comments
+                    </th>
+                    <th className="px-6 py-4 text-left font-bold uppercase text-[#2563eb] dark:text-[#adcbfb] text-[13px]">
+                      Comments Date
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
+                  {allData.securityLogComments.length > 0 ? (
+                    allData.securityLogComments.map((data: any, index: any) => (
+                      <tr
+                        key={index}
+                        className="transition-colors hover:bg-gray-50 dark:hover:bg-slate-800"
+                      >
+                        <td className="px-6 py-3 text-slate-700 dark:text-slate-200">
+                          {`${data.first_name} ${data.last_name} (${data.name})`}
+                        </td>
+                        <td className="px-6 py-3 text-slate-700 dark:text-slate-200">
+                          {data.comments}
+                        </td>
+                        <td className="px-6 py-3 text-slate-700 dark:text-slate-200">
+                          {format(new Date(data.created_date), "dd MMM yyyy")}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td
+                        colSpan={3}
+                        className="px-6 py-10 text-center text-sm text-slate-400 dark:text-slate-500"
+                      >
+                        No Record Found
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+
+        {allData?.ipgSummary && (
+          <div className="w-full bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl shadow-sm px-6 pt-4 pb-6 text-[13px]">
+            <h2 className="text-[18px] text-slate-800 dark:text-white mb-4 font-semibold">
+              Summary from security architect
+            </h2>
+
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse">
+                <thead className="border-b border-blue-100 dark:border-slate-700 bg-[#f2f8ff] dark:bg-slate-800">
+                  <tr>
+                    <th className="px-6 py-4 text-left font-bold uppercase text-[#2563eb] dark:text-[#adcbfb] text-[13px]">
+                      Summary
+                    </th>
+                    <th className="px-6 py-4 text-left font-bold uppercase text-[#2563eb] dark:text-[#adcbfb] text-[13px]">
+                      Summary Date
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
+                  {allData.ipgSummary.length > 0 ? (
+                    allData.ipgSummary.map((data: any, index: any) => (
+                      <tr
+                        key={index}
+                        className="transition-colors hover:bg-gray-50 dark:hover:bg-slate-800"
+                      >
+                        <td className="px-6 py-3 text-slate-700 dark:text-slate-200">
+                          {data.comments}
+                        </td>
+                        <td className="px-6 py-3 text-slate-700 dark:text-slate-200">
+                          {format(new Date(data.created_date), "dd MMM yyyy")}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td
+                        colSpan={2}
+                        className="px-6 py-10 text-center text-sm text-slate-400 dark:text-slate-500"
+                      >
+                        No Record Found
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+        {allData?.isExportPdf && (<div className="text-end pb-4">
+          <Link
+            href={"#"}
+            className="cursor-pointer flex justify-center items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-kpmg-blue rounded transition-colors  float-right"
+            onClick={() => {
+                const api = btoa(`/clearance/clearance-get-pdf`);
+                const url = `/download?api=${api}&formData=${decodeURIComponent(JSON.stringify(formData))}&filename=${btoa(`SAR - ${allData?.solutionName}`)}&from=2`;
+                window.open(url, '_blank', 'noopener,noreferrer');
+              }
+            }
+          >
+            <FileTextIcon className='size-4' />Export as PDF
+          </Link>
+        </div>)}
+
+
+        <div className="bg-white dark:bg-neutral-950 border border-gray-200 
+        dark:border-white/10 rounded-lg shadow-sm pt-2 pb-4 text-[13px]">
+          {apiData?.header_first_page && (
+            <div style={{ width: '75%', marginLeft: 'auto', marginRight: 'auto', display: 'block' }}>
+              <div className="row">
+                <div className="col-xs-12 col-md-12">
+                  <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
+                    <div className="panel">
+                      <div className="panel-body">
+                        <div
+                          id="header_first_page"
+                          suppressContentEditableWarning={true}
+                          contentEditable={allData?.isContentEditable}
+                        >
+                          <div
+                            suppressContentEditableWarning={true}
+                            onClick={(e: any) => clickHandler(e)}
+                            dangerouslySetInnerHTML={{ __html: apiData.header_first_page }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {apiData?.header_revision_second_page && (
+            <div className="row">
+              <div className="col-xs-12 col-md-12 col-lg-12">
+                <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
+                  <div className="panel">
+                    <div className="panel-body">
+                      <div className="p-t-2">
+                        <div style={{ maxWidth: '83%', marginRight: 'auto', paddingTop: '30px' }}>
+                          <h2 className="text-primary">Document review and approval</h2>
+                        </div>
+                        <div>
+                          {allData?.isContentEditable === 'true' && (
+                            <button
+                              type="button"
+                              id="addRevisionHistory"
+                              onClick={(e) => addRevisionHistory(e)}
+                              className="btn btn-custom-primary"
+                            >
+                              + Add revision history
+                            </button>
+                          )}
+                          <div
+                            id="header_revision_second_page"
+                            suppressContentEditableWarning={true}
+                            contentEditable={allData?.isContentEditable}
+                            dangerouslySetInnerHTML={{ __html: apiData.header_revision_second_page }}
+                          />
+                          <br />
+                          {allData?.isContentEditable === 'true' && (
+                            <button
+                              type="button"
+                              id="addReviewerRow"
+                              onClick={(e) => addReviewerRow(e)}
+                              className="btn btn-custom-primary"
+                            >
+                              + Add reviewer
+                            </button>
+                          )}
+                          <div
+                            id="header_reviewer_second_page"
+                            suppressContentEditableWarning={true}
+                            contentEditable={allData?.isContentEditable}
+                            dangerouslySetInnerHTML={{ __html: apiData.header_reviewer_second_page }}
+                          />
+                          <br />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+
+          <div className="w-full lg:w-full">
+            <div className="bg-white rounded">
+              <div className="p-4">
+                <div className="w-full">
+                  <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px', }}>
+                    <h2 className="text-primary">1 &nbsp; &nbsp; Solution Overview</h2>
+                  </div>
+                  <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1" dangerouslySetInnerHTML={{ __html: apiData.header_1 }}>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div className="w-full">
+                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                  <h3 className="text-primary">1.1 &nbsp; &nbsp; Risk Summary</h3>
+                </div>
+                <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1_1" onClick={(e: any) => clickHandler(e)} dangerouslySetInnerHTML={{ __html: apiData.header_1_1 }}>
+                </div>
+
+                <div style={{ display: 'none', justifyContent: 'flex-end', maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }} id='add_1_1_1_subsection' onClick={e => add_1_1_1_subsection(e)}>
+                  <button style={{ float: 'right' }} type="button" className="cursor-pointer bg-kpmg-blue text-white rounded-md px-3 py-2 text-[14px] mt-2 mr-24"> + Add subsection</button>
+                </div>
+
+                <div style={{ display: apiData.header_1_1_1 ? 'block' : 'none' }} suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1_1_1" dangerouslySetInnerHTML={{ __html: apiData.header_1_1_1 ? apiData.header_1_1_1 : header111DefaultData }}>
+                </div>
+
+                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                  <h4 className="text-primary"><div id="header_1_1_2_txt" dangerouslySetInnerHTML={{ __html: allData?.header_1_1_2_txt }}></div></h4>
+                </div>
+                <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1_1_2" dangerouslySetInnerHTML={{ __html: apiData.header_1_1_2 }}>
+                </div>
+
+              </div>
+              <div>
+                <div className="w-full">
+                  <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                    <h3 className="text-primary">1.2 &nbsp; &nbsp; Solution Summary</h3>
+                  </div>
+                  <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1_2" dangerouslySetInnerHTML={{ __html: apiData.header_1_2 }}>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <div className="w-full">
+                  <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                    <h3 className="text-primary">1.3 &nbsp; &nbsp; Data Classification and Business Criticality</h3>
+                  </div>
+                  <div suppressContentEditableWarning={true} contentEditable={false} id="header_1_3" dangerouslySetInnerHTML={{ __html: apiData.header_1_3 }}>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <div className="w-full">
+                  <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                    <h3 className="text-primary">1.4 &nbsp; &nbsp; Users</h3>
+                  </div>
+                  <div contentEditable="false" id="header_1_4" dangerouslySetInnerHTML={{ __html: apiData.header_1_4 }}>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <div className="w-full">
+                  <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                    <h3 className="text-primary">1.5 &nbsp; &nbsp; Hosting</h3>
+                  </div>
+                  <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_1_5" dangerouslySetInnerHTML={{ __html: apiData.header_1_5 }}>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <div className="w-full">
+                  <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                    <h2 className="text-primary">2 &nbsp; &nbsp; Architecture</h2>
+                  </div>
+                  <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2" dangerouslySetInnerHTML={{ __html: apiData.header_2 }}>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <div className="w-full">
+                  <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                    <h3 className="text-primary">2.1 &nbsp; &nbsp; High Level Technical Architecture Diagram<br></br><span style={{ fontSize: '10px', color: 'red' }}>(Notes: Only allowed formats are : jpg,jpeg,png)</span></h3>
+                  </div>
+                  <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto' }} id="header_2_1_img"></div>
+                  <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_1" dangerouslySetInnerHTML={{ __html: apiData.header_2_1 }}>
+                  </div>
+                </div>
+              </div>
+              {apiData?.header_2_2_1 && (
+                <div>
+                  <div className="w-full">
+                    <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                      <h3 className="text-primary">2.2 &nbsp; &nbsp; Key Security Features</h3>
+                    </div>
+                    <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_2" dangerouslySetInnerHTML={{ __html: apiData.header_2_2 }}>
+                    </div>
+                    <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                      <h4 className="text-primary">2.2.1 &nbsp; &nbsp; General Environment <br></br><span style={{ fontSize: '10px', color: 'red' }}>{`(Notes: This is a text field supports up to maximum of 300,000 characters (including spaces), and it does not support below characters: *, >>, & , /, \, etc.)`}</span></h4>
+                    </div>
+                    <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_2_1" dangerouslySetInnerHTML={{ __html: apiData.header_2_2_1 }}>
+                    </div>
+                    <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                      <h4 className="text-primary">2.2.2 &nbsp; &nbsp; Authentication / Authorization</h4>
+                    </div>
+                    <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_2_2" dangerouslySetInnerHTML={{ __html: apiData.header_2_2_2 }}>
+                    </div>
+                    <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                      <h4 className="text-primary">2.2.3 &nbsp; &nbsp; Data Separation</h4>
+                    </div>
+                    <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_2_3" dangerouslySetInnerHTML={{ __html: apiData.header_2_2_3 }}>
+                    </div>
+                    <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                      <h4 className="text-primary">2.2.4 &nbsp; &nbsp; Encryption</h4>
+                    </div>
+                    <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_2_4" dangerouslySetInnerHTML={{ __html: apiData.header_2_2_4 }}>
+                    </div>
+                    <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                      <h4 className="text-primary">2.2.5 &nbsp; &nbsp; Logging and Monitoring (Auditing)</h4>
+                    </div>
+                    <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_2_5" dangerouslySetInnerHTML={{ __html: apiData.header_2_2_5 }}>
+                    </div>
+                    <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                      <h4 className="text-primary">2.2.6 &nbsp; &nbsp; Reporting / Data Exporting</h4>
+                    </div>
+                    <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_2_6" dangerouslySetInnerHTML={{ __html: apiData.header_2_2_6 }}>
+                    </div>
+                    <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                      <h4 className="text-primary">2.2.7 &nbsp; &nbsp; External Content</h4>
+                    </div>
+                    <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_2_2_7" dangerouslySetInnerHTML={{ __html: apiData.header_2_2_7 }}>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {apiData?.header_3_1 ? (
+                <>
+                  <div>
+                    <div className="w-full">
+                      <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                        <h2 className="text-primary">3 &nbsp; &nbsp; Technology Security Review</h2>
+                      </div>
+                      <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_3" dangerouslySetInnerHTML={{ __html: apiData.header_3 }}>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="col-xs-12 col-md-12 col-lg-12 p-t-2" id="activities_row">
+                      <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                        <button style={{ 'float': 'right', display: allData?.isContentEditable == "true" ? 'block' : 'none' }} type="button" id='addActivities' value='1234' className="btn btn-custom-primary" onClick={(e: any) => addActivities(e)}> + Add Activities</button>
+                        <h3 className="text-primary">3.1 &nbsp; &nbsp; Activities</h3>
+                      </div>
+
+                      <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_3_1" dangerouslySetInnerHTML={{ __html: apiData.header_3_1 }}>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="col-xs-12 col-md-12 col-lg-12 p-t-2" id="testing_overview_row">
+                      <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                        <button style={{ float: 'right', display: allData?.isContentEditable == "true" ? 'block' : 'none' }}
+                          type="button" id='addTestingOverview' value='1234' className="cursor-pointer bg-kpmg-blue text-white rounded-md px-3 py-2 text-[14px] mt-2" onClick={(e) => addTestingOverview(e)}> + Add Testing Overview</button>
+                        <h3 className="text-primary">3.2 &nbsp; &nbsp; Testing Overview</h3>
+                      </div>
+                      <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_3_2" dangerouslySetInnerHTML={{ __html: apiData.header_3_2 }}>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="w-full">
+                      <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                        <h3 className="text-primary">3.3 &nbsp; &nbsp; Testing Approach</h3>
+                      </div>
+                      <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_3_3" dangerouslySetInnerHTML={{ __html: apiData.header_3_3 }}>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="w-full">
+                      <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                        <h3 className="text-primary">3.4 &nbsp; &nbsp; High Level Security Requirements <br></br><span style={{ fontSize: '10px', color: 'red' }}>(Notes for comment section: [255 characters. Comment if the solution was partially implemented, not implemented, not assessed or there is a gap])</span></h3>
+                      </div>
+                      <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_3_4" dangerouslySetInnerHTML={{ __html: apiData.header_3_4 }}>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <div className="w-full">
+                      <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                        <h2 className="text-primary">3 &nbsp; &nbsp; Assessment Overview</h2>
+                      </div>
+                      <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_3" dangerouslySetInnerHTML={{ __html: apiData.header_3 }}>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="col-xs-12 col-md-12 col-lg-12 p-t-2" id="testing_overview_row">
+                      <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                        <button style={{ float: 'right', display: allData?.isContentEditable == "true" ? 'block' : 'none' }} type="button" id='addTestingOverview' value='1234' className="cursor-pointer bg-kpmg-blue text-white rounded-md px-3 py-2 text-[14px] mt-2" onClick={(e) => addTestingOverview(e)}> + Add Testing Overview</button>
+                        <h3 className="text-primary">3.1 &nbsp; &nbsp; Overview</h3>
+                      </div>
+                      <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_3_2" dangerouslySetInnerHTML={{ __html: apiData.header_3_2 }}>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="w-full">
+                      <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                        <h3 className="text-primary">3.2 &nbsp; &nbsp; High Level Security Requirements<br></br><span style={{ fontSize: '10px', color: 'red' }}>(Notes for comment section: [255 characters. Comment if the solution was partially implemented, not implemented, not assessed or there is a gap])</span></h3>
+                      </div>
+                      <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_3_4" dangerouslySetInnerHTML={{ __html: apiData.header_3_4 }}>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+            <div>
+              <div className="w-full">
+                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                  <h2 className="text-primary">4 &nbsp; &nbsp;  Plan of Action and Milestone (POA&M)</h2>
+                </div>
+                <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_6" dangerouslySetInnerHTML={{ __html: apiData.header_6 }}>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div id="header_6_1" className="col-xs-12 col-md-12 col-lg-12 p-t-2">
+                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                  <h3 className="text-primary">4.1 &nbsp; &nbsp; High Risk Findings</h3>
+                </div>
+                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                  <div suppressContentEditableWarning={true} id="header_6_1" dangerouslySetInnerHTML={{ __html: allData?.securityObservationsData.High }}>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div id="header_6_2" className="col-xs-12 col-md-12 col-lg-12 p-t-2">
+                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                  <h3 className="text-primary">4.2 &nbsp; &nbsp; Medium Risk Findings</h3>
+                </div>
+                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                  <div suppressContentEditableWarning={true} id="header_6_2" dangerouslySetInnerHTML={{ __html: allData?.securityObservationsData.Medium }}>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div id="header_6_3" className="col-xs-12 col-md-12 col-lg-12 p-t-2">
+                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                  <h3 className="text-primary">4.3 &nbsp; &nbsp; Low Risk Findings</h3>
+                </div>
+                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '10px' }}>
+                  <div suppressContentEditableWarning={true} id="header_6_3" dangerouslySetInnerHTML={{ __html: allData?.securityObservationsData.Low }}>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div className="w-full">
+                <div style={{ maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }}>
+                  <h2 className="text-primary">5 &nbsp;&nbsp; Additional Business Considerations</h2>
+                </div>
+                <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_7" dangerouslySetInnerHTML={{ __html: apiData.header_7 }}>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div style={{ display: allData?.isContentEditable == "true" ? 'flex' : 'none', justifyContent: 'flex-end', maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }} id='addSupportTeamRow' onClick={(e) => addSupportTeamRow(e)}>
+                {allData?.isContentEditable == 'true' && (<button style={{ float: 'right' }} type="button" className="cursor-pointer bg-kpmg-blue text-white rounded-md px-3 py-2 text-[14px] mt-2"> + Add row</button>)}
+              </div>
+
+              <div suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="header_support_team" dangerouslySetInnerHTML={{ __html: apiData.header_support_team }}>
+              </div>
+            </div>
+
+            <div style={{ display: allData?.sub_7_display_flex, justifyContent: 'flex-end', maxWidth: '83%', marginLeft: 'auto', marginRight: 'auto', paddingTop: '30px' }} id='addAddendumSubsection' onClick={e => addAddendumSubsection(e)}>
+              <button style={{ float: 'right' }} type="button" className="cursor-pointer bg-kpmg-blue text-white rounded-md px-3 py-2 text-[14px] mt-2"> + Add addendum subsection</button>
+            </div>
+
+            <div style={{ display: allData?.sub_7_display }} suppressContentEditableWarning={true} contentEditable={allData?.isContentEditable} id="addendum_header" dangerouslySetInnerHTML={{ __html: apiData.addendum_header ? apiData.addendum_header : addendumDefaultData }}>
+            </div>
+            
+            {allData?.comments && (
+              <div className="mt-2">
+                <div className="w-full px-8 py-4">
+                  <label htmlFor="sar_comments" className="label-custom text-[13px]">Comments</label>
+                  <input
+                    type="text"
+                    name="sar_comments"
+                    id="sar_comments"
+                    className="w-full rounded border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-wrap">
+              <div className="w-full">
+                <div className="text-right mb-5 mr-6">
+                  {allData?.sar_save_as_draft && (<input type="submit" name="sar_save_as_draft" id="sar_save_as_draft" value="Save as draft" className="cursor-pointer bg-kpmg-blue text-white rounded-md px-3 py-2 text-[13px] mr-2" onClick={e => submitDraftSar(e)} />)}
+
+                  {allData?.sar_clone_button && (<input type="submit" name="sar_clone_button" id="sar_clone_button" value="Re-clone SAR" className="cursor-pointer bg-kpmg-blue text-white rounded-md px-3 py-2 text-[13px] mr-2" onClick={e => submitCloneSAR(allData?.assessmentId)} />)}
+
+                  {allData?.del_add_sub_7 && (
+                    <input type="submit" name="del_add_sub_7" id="del_add_sub_7" value={addAendumText} className="cursor-pointer bg-kpmg-blue text-white rounded-md px-3 py-2 text-[13px] mr-2" onClick={e => delAddSub_7(e)} />)}
+
+                  {allData?.del_add_sub_1_1_1 && (
+                    <input type="submit" name="del_add_sub_1_1_1" id="del_add_sub_1_1_1" value={sub111text} className="cursor-pointer bg-kpmg-blue text-white rounded-md px-3 py-2 text-[13px] mr-2" onClick={e => delAddSub_1_1_1(e)} />)}
+
+                  {allData?.sar_approve && (
+                    <input type="submit" name="sar_approve" id="sar_approve" value="Submit to solution team" className="btn-info-custom cursor-pointer text-white rounded-md px-3 py-2 text-[13px] mr-2 mx-1" onClick={e => submitDraftSar(e)} />)}
+
+                  {allData?.submit_sar && (
+                    <input type="submit" name="submit_sar" id="submit_sar" value="Finalize" className="btn-info-custom cursor-pointer text-white rounded-md px-3 py-2 text-[13px] mr-2 submit_draft_sar mx-1" onClick={e => submitDraftSar(e)} />)}
+
+                  {allData?.sar_save_send_as_draft && (
+                    <input type="submit" name="sar_save_as_draft" id="sar_save_send_as_draft" value="Save and return to final draft" className="cursor-pointer bg-kpmg-blue text-white rounded-md px-3 py-2 text-[13px] mr-2 submit_draft_sar" onClick={e => submitDraftSar(e)} />)}
+
+                  {allData?.solution_sar_approve && (
+                    <input type="submit" name="solution_sar_approve" id="solution_sar_approve" value="Approve" className="btn-info-custom cursor-pointer text-white rounded-md px-3 py-2 text-[13px] mr-2 submit_draft_sar" onClick={e => submitDraftSar(e)} />)}
+
+                  {allData?.solution_sar_reject && (
+                    <input type="submit" name="solution_sar_reject" id="solution_sar_reject" value="Request revisions" className="btn btn-danger-custom cursor-pointer text-white rounded-md px-3 py-2 text-[13px] mr-2 submit_draft_sar" onClick={e => submitDraftSar(e)} />)}
+
+                  {allData?.ana_sar_submit && (
+                    <input type="submit" name="ana_sar_submit" id="ana_sar_submit" value="Submit to coordinator" className="btn-info-custom cursor-pointer text-white rounded-md px-3 py-2 text-[13px] mr-2 submit_draft_sar" onClick={e => submitDraftSar(e)} />)}
+
+                  {allData?.ipg_sar_submit && (
+                    <input type="submit" name="ipg_sar_submit" id="ipg_sar_submit" value="Submit to leadership & the delegate" className="cursor-pointer bg-kpmg-blue text-white rounded-md px-3 py-2 text-[13px] mr-2 submit_draft_sar" onClick={e => submitDraftSar(e)} />)}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+};

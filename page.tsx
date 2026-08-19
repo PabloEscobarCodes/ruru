@@ -1,113 +1,479 @@
 'use client';
 
-import { useState } from 'react';
-import {
-  RiskScoreCard,
-  CriticalHighCard,
-  SlaBreachCard,
-  DiscoveryRateCard,
-  AssetCoverageCard,
-  AssetsAtRiskCard,
-  ActionsTile,
-  TeamPerformanceCard,
-  HeatmapCard,
-  DiscoveryTrendsCard,
-  RecurrenceCard,
-  AgingCard,
-  TestTypeCard,
-  ExposureCard,
-  CustomChartCard,
-  ChartBuilderModal,
-  ChatPanel,
-} from './Components';
-import type { CustomChartConfig } from './dashboard-data';
+import React, { useEffect, useState, useRef, useMemo } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import ReactSelect from "react-select";
+import DOMPurify from 'dompurify';
+import DataTable from "@/components/DataTable";
+import LoadingOverlay from "@/components/LoadingOverlay";
+import { callBackend, callBackendFormData, forceDownload, downloadFile, downloadPdfFile, formatDateTime, actionBtn} from "@/lib/helpers";
+import { customStyles, darkModeStyles } from "@/lib/styles";
+import { toast } from "react-hot-toast";
+import { Download } from "lucide-react";
+import TitleBar from "@/components/TitleBar";
+import Breadcrumbs from "@/components/Breadcrumbs";
 
-const HEADER_HEIGHT_PX = 64;
-const CHROME_PX = HEADER_HEIGHT_PX + 32; // header + page padding + gaps
-const USABLE_VH = `(100vh - ${CHROME_PX}px)`;
-const ROW1_H = `calc(${USABLE_VH} * 0.24)`;
-const ROW2_H = `calc(${USABLE_VH} * 0.40)`;
-const ROW3_MIN_H = `calc(${USABLE_VH} * 0.36)`;
+const downloadableFileRegEx =
+  /\.(doc|docx|xls|xlsx|pdf|jpg|jpeg|png|gif|webp|txt|csv|ppt|pptx|zip|rar|7z)$/i;
 
-export default function DashboardPage() {
-  const [builderOpen, setBuilderOpen] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
-  const [customCharts, setCustomCharts] = useState<CustomChartConfig[]>([]);
+const Event10Value = ({ value }: { value?: string | null }) => {
+  const items = (value ?? "")
+    .split("||")
+    .map((item) => item.trim())
+    .filter(Boolean);
 
-  const handleCreate = (cfg: CustomChartConfig) =>
-    setCustomCharts((prev) => [...prev, cfg]);
-
-  const handleRemove = (id: string) =>
-    setCustomCharts((prev) => prev.filter((c) => c.id !== id));
-
-  const hasCustom = customCharts.length > 0;
+  if (!items.length) {
+    return <>-</>;
+  }
 
   return (
-    <div className="bg-grey5/30 dark:bg-[#060B28]" style={{ minHeight: `calc(100vh - ${HEADER_HEIGHT_PX}px)` }}>
-      <main
-        className="grid gap-2 p-2"
-        style={{
-          gridTemplateRows: `${ROW1_H} ${ROW2_H} minmax(${ROW3_MIN_H}, auto)`,
-          minHeight: `calc(100vh - ${HEADER_HEIGHT_PX}px)`,
-        }}
-      >
-        {/* Row 1 — slot 7 holds the actions tile (Add Chart + Ask AI) */}
-        <div className="grid grid-cols-7 gap-2 min-h-0">
-          <RiskScoreCard />
-          <CriticalHighCard />
-          <SlaBreachCard />
-          <DiscoveryRateCard />
-          <AssetCoverageCard />
-          <AssetsAtRiskCard />
-          <ActionsTile
-            onAddChart={() => setBuilderOpen(true)}
-            onAskAI={() => setChatOpen(true)}
-          />
-        </div>
+    <div>
+      {items.map((item: string, index: number) => {
+        const normalizedPath = item
+          .replace(/\\/g, "/")
+          .replace(/^\/+/, "")
+          .replace(/^storage\/+/i, "");
 
-        {/* Row 2 */}
-        <div
-          className="grid gap-2 min-h-0"
-          style={{ gridTemplateColumns: '2fr 1.5fr 1.5fr' }}
-        >
-          <TeamPerformanceCard />
-          <HeatmapCard />
-          <DiscoveryTrendsCard />
-        </div>
+        const filename =
+          normalizedPath.split("/").pop() ?? normalizedPath;
 
-        {/* Row 3 — existing 4 charts + custom charts inline */}
-        <div
-          className="grid grid-cols-4 gap-2"
-          style={{
-            gridAutoRows: hasCustom ? '240px' : 'minmax(0, 1fr)',
-            minHeight: 0,
-          }}
-        >
-          <RecurrenceCard />
-          <AgingCard />
-          <TestTypeCard />
-          <ExposureCard />
-          {customCharts.map((c) => (
-            <CustomChartCard
-              key={c.id}
-              config={c}
-              onRemove={() => handleRemove(c.id)}
-            />
-          ))}
-        </div>
-      </main>
+        const hasDownloadableExtension =
+          downloadableFileRegEx.test(filename);
 
-      <ChartBuilderModal
-        open={builderOpen}
-        onClose={() => setBuilderOpen(false)}
-        onCreate={handleCreate}
-      />
+        // Show normal text without a download link
+        if (!hasDownloadableExtension) {
+          return (
+            <div key={index} className="pb-2">
+              {item}
+            </div>
+          );
+        }
 
-      <ChatPanel
-        open={chatOpen}
-        onClose={() => setChatOpen(false)}
-        onAddChart={handleCreate}
-      />
+        // Prevent duplicate slashes between the base URL and path
+        const serveFilesUrl = (
+          process.env.NEXT_PUBLIC_SERVE_FILES ?? ""
+        ).replace(/\/+$/, "");
+
+        const fileApi = `${serveFilesUrl}/${normalizedPath}/`;
+
+        return (
+          <div key={index} className="pb-2">
+            <Link
+                  href={`/download?api=${fileApi}&filename=${btoa(filename!)}&from=1`}
+                  target="_blank"
+                  className="text-blue-600 hover:underline text-[13px] font-medium"
+                >
+              {filename}
+            </Link>
+          </div>
+        );
+      })}
     </div>
   );
-}
+};
+
+const UpdateCell = ({ row, requestId }: { row: any; requestId: string }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  console.log(row)
+  if (row.event == 4) {
+    const parts = (row.new_value_str ?? "").split("||");
+    const preview = parts[0] + "<br/><br/>";
+    const extra = [parts[1], parts[2]].filter(Boolean).join("<br/><br/>");
+    console.log(row.id)
+    return (
+      <div>
+        <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(preview) }} />
+        {isExpanded && (
+          <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(extra) }} />
+        )}
+        <br />
+        <div className="flex items-center justify-between mt-1">
+          <button
+            type="button"
+            onClick={() => setIsExpanded(p => !p)}
+            className="text-kpmg-blue dark:text-blue-600 cursor-pointer hover:underline text-[13px] font-semibold"
+          >
+            {isExpanded ? "- Read Less" : "+ Read More"}
+          </button>
+          <button
+            type="button"
+            className="text-kpmg-blue  dark:text-blue-600 cursor-pointer hover:underline text-[13px] font-semibold"
+            onClick={() => {
+              const obj = {
+                "sgpId": requestId,
+                "id": row.id
+              }
+              const api = btoa(`/clearance/clearance-print-mail`);
+              const url = `/download?api=${api}&formData=${encodeURIComponent(JSON.stringify(obj))}&filename=${btoa(`Email document - ${requestId}`)}&from=2`;
+              window.open(url, '_blank', 'noopener,noreferrer');
+            }}
+          >
+            Download
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // if (row.event == 3) {
+  //   return (
+  //     <div>
+  //       {(row.new_value ?? "").split("||").map((filePath: string, index: number) => {
+  //         const filename = filePath.split("/").pop();
+  //         const newFilePath = filePath.replace(/\//g, "||");
+  //         let api = btoa(`${process.env.NEXT_PUBLIC_SERVE_FILES}/${newFilePath}/`)
+  //         return (
+  //           <div key={index} className="pb-2">
+  //             <Link href={`/download?api=${api}&filename=${btoa(filename!)}&from=1`} target="_blank"
+  //               className="text-blue-600 hover:underline text-[13px] font-medium"
+  //             >
+  //               {filename}
+  //             </Link>
+  //           </div>
+  //         );
+  //       })}
+  //     </div>
+  //   );
+  // }
+
+  if (row.event == 3) {
+    return (
+      <div>
+        {(row.new_value ?? "")
+          .split("||")
+          .filter(Boolean)
+          .map((filePath: string, index: number) => {
+            const normalizedPath = filePath
+              .replace(/\\/g, "/")
+              .replace(/^storage\//, "");
+
+            const filename = normalizedPath.split("/").pop();
+            const api = btoa(`${process.env.NEXT_PUBLIC_SERVE_FILES}/${normalizedPath}/`);
+
+            return (
+              <div key={index} className="pb-2">
+                <Link
+                  href={`/download?api=${api}&filename=${btoa(filename!)}&from=1`}
+                  target="_blank"
+                  className="text-blue-600 hover:underline text-[13px] font-medium"
+                >
+                  {filename}
+                </Link>
+              </div>
+            );
+          })}
+      </div>
+    );
+  }
+  
+  if (row.event == 10) {
+    // return (
+    //   <div>
+    //     {(row.new_value ?? "")
+    //       .split("||")
+    //       .filter(Boolean)
+    //       .map((filePath: string, index: number) => {
+    //         const normalizedPath = filePath
+    //           .replace(/\\/g, "/")
+    //           .replace(/^storage\//, "");
+
+    //         const filename = normalizedPath.split("/").pop();
+    //         const api = btoa(`${process.env.NEXT_PUBLIC_SERVE_FILES}/${normalizedPath}/`);
+
+    //         return (
+    //           <div key={index} className="pb-2">
+    //             <Link
+    //               href={`/download?api=${api}&filename=${btoa(filename!)}&from=1`}
+    //               target="_blank"
+    //               className="text-blue-600 hover:underline text-[13px] font-medium"
+    //             >
+    //               {filename}
+    //             </Link>
+    //           </div>
+    //         );
+    //       })}
+    //   </div>
+    // );
+    return <Event10Value value={row.new_value} />
+  }
+
+  return <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(row.new_value_str) }} />;
+};
+
+const RequestorArtifactory = () => {
+  const params = useParams();
+  const requestId = params?.id as string;
+
+  const objectToArray = (dropdown: any) =>
+    Object.entries(dropdown).map(([key, value]) => ({ key, value }));
+
+  const [logTypeOptions, setLogTypeOptions] = useState<any>();
+  const [allData, setAllData] = useState<any>();
+  const [tableData, setTableData] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+
+  const [sortColumn, setSortColumn] = useState<string>("created_date");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [isPageDropdownOpen, setIsPageDropdownOpen] = useState(false);
+  const [tableError, setTableError] = useState('');
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const observer = new MutationObserver(() =>
+      setIsDarkMode(document.documentElement.classList.contains("dark"))
+    );
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    setIsDarkMode(document.documentElement.classList.contains("dark"));
+    return () => observer.disconnect();
+  }, []);
+
+  const getArtifactory = async () => {
+    if (!requestId) return;
+    setIsLoading(true);
+    try {
+      const { data } = await callBackend(`/request/requestor-artifactory/`, "POST", {
+        sgpId: requestId,
+        eventFilterStatus: "No",
+      });
+      if (data.status) {
+        setAllData(data.data);
+        setTableData(data.data.logUpdateData);
+        setLogTypeOptions(objectToArray(data.data.logEventList));
+      } else {
+        toast.error(data.message);
+      }
+    } catch {
+      toast.error('Something went wrong');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => { getArtifactory(); }, []);
+
+  const filter = async (filterData: any) => {
+    if (!filterData?.length) {
+      getArtifactory();
+      return;
+    }
+
+    setIsLoading(true);
+    const formData = new FormData();
+    formData.append("sgpId", requestId);
+    formData.append("eventFilterStatus", "Yes");
+    if (filterData?.length) {
+      filterData.forEach((f: any) => formData.append("eventFilter", f.value));
+    }
+    try {
+      const { data } = await callBackendFormData(`/request/requestor-artifactory/`, "POST", formData);
+      if (data.status) {
+        setAllData(data.data);
+        setTableData(data.data.logUpdateData);
+        setLogTypeOptions(objectToArray(data.data.logEventList));
+        setCurrentPage(1);
+      } else {
+        toast.error(data.message);
+      }
+    } catch {
+      toast.error('Something went wrong');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      setSortOrder(prev => prev === "asc" ? "desc" : "asc");
+    } else {
+      setSortColumn(column);
+      setSortOrder("asc");
+    }
+    setCurrentPage(1);
+  };
+
+  const sortedData = useMemo(() => {
+    if (!sortColumn) return tableData;
+    return [...tableData].sort((a, b) => {
+      const aVal = a[sortColumn] ?? "";
+      const bVal = b[sortColumn] ?? "";
+      if (aVal < bVal) return sortOrder === "asc" ? -1 : 1;
+      if (aVal > bVal) return sortOrder === "asc" ? 1 : -1;
+      return 0;
+    });
+  }, [tableData, sortColumn, sortOrder]);
+
+  const totalRecords = sortedData.length;
+  const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
+  const paginatedData = sortedData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+
+  const columns = useMemo(() => [
+    {
+      key: "created_date",
+      label: "Date",
+      sortable: true,
+      width: "w-45",
+
+      render: (value: any) => (
+        <span className="text-[13px] text-slate-700 dark:text-slate-300 whitespace-nowrap">
+          {formatDateTime(value)}
+        </span>
+      ),
+
+    },
+    {
+      key: "created_by_name",
+      label: "Name",
+      width: "w-36",
+      render: (value: any) => (
+        <span className="font-bold text-slate-700 dark:text-slate-200">{value ?? "-"}</span>
+      ),
+    },
+    {
+      key: "response_for",
+      label: "Response For",
+      width: "w-40",
+    },
+    {
+      key: "new_value_str",
+      label: "Update",
+      width: "w-[420px]",
+      render: (_: any, row: any) => <UpdateCell row={row} requestId={requestId} />,
+    },
+    {
+      key: "old_value_str",
+      label: "Old Data",
+      width: "w-48",
+      render: (value: any, row: any) =>
+        row.event == 10 ? (
+          <Event10Value value={row.old_value ?? value} />
+        ) : (
+          <div
+            dangerouslySetInnerHTML={{
+              __html: DOMPurify.sanitize(value ?? ""),
+            }}
+          />
+        ),
+    },
+    // {
+    //   key: "old_value_str",
+    //   label: "Old Data",
+    //   width: "w-48",
+    // },
+    {
+      key: "event_string",
+      label: "Type",
+      width: "w-32",
+      render: (value: any) => {
+        const colorMap: Record<string, string> = {
+          Artifacts: "text-sky-700 dark:text-sky-400",
+          Comment: "text-green-700 dark:text-green-400",
+          Status: "text-pink-700 dark:text-pink-400",
+        };
+        return (
+          <span className={`font-medium text-[13px] ${colorMap[value] ?? "text-slate-500"}`}>
+            {value ?? "-"}
+          </span>
+        );
+      },
+    },
+    {
+      key: "user_role",
+      label: "User Role",
+      width: "w-40",
+      render: (value: any) => (
+        <>{value ?? "-"}</>
+      ),
+    },
+  ], [requestId]);
+
+  const breadcrumbs = [
+    { label: "Home", href: "/" },
+    { label: "Requests", href: "/requests" },
+    { label: `View Logs - ${requestId}` }
+  ];
+
+  return (
+    <>
+      <Breadcrumbs items={breadcrumbs} />
+
+      <div className="flex-1 overflow-y-auto p-10 bg-slate-50 dark:bg-slate-950">
+        {isLoading && <LoadingOverlay />}
+
+        <div className="max-w-[1400px] mx-auto space-y-6 pb-20">
+          <TitleBar
+            sarId={requestId}
+            projectName={allData?.projectName ?? "—"}
+            solutionName={allData?.solutionName ?? "—"}
+            solutionType={allData?.solutionType ?? "—"}
+          />
+
+          <div className="bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-8">
+            <div className="flex items-end justify-between gap-6 mb-6">
+              <div className="w-full max-w-sm space-y-1.5">
+                <label className="block text-[13px] font-bold text-slate-700 dark:text-slate-200">
+                  Select Log Type
+                </label>
+                <ReactSelect
+                  isMulti
+                  name="logType"
+                  placeholder="Select"
+                  onChange={selectedOption => filter(selectedOption)}
+                  options={logTypeOptions?.map((option: any) => ({
+                    value: option.key,
+                    label: option.value,
+                  }))}
+                  styles={isDarkMode ? darkModeStyles : customStyles}
+                  className="basic-multi-select"
+                  classNamePrefix="select"
+                />
+                <span className="text-[13px] text-slate-500">
+                  (Note: Date is in this format: yyyy-mm-dd)
+                </span>
+              </div>
+
+              <button
+                onClick={() => {
+                  const api = btoa(`/request/requestor-artifacts-export`);
+                  const url = `/download?api=${api}&data=${encodeURIComponent(JSON.stringify({ requestId: requestId }))}&xlName=${btoa(`Export details - ${allData?.solutionName}`)}&contentType=${btoa(`application/zip, application/octet-stream`)}&from=3`;
+                  window.open(url, '_blank', 'noopener,noreferrer');
+                }
+                }
+                // className="inline-flex items-center gap-2 px-5 py-3 bg-kpmg-blue hover:-translate-y-px transition-all text-white font-medium text-[13px] rounded-[10px] shadow-md whitespace-nowrap cursor-pointer border-none"
+                className={`${actionBtn} bg-kpmg-blue hover:-translate-y-px transition-all`}
+              >
+                <Download className="w-4 h-4" />
+                Export Artifacts
+              </button>
+            </div>
+
+            <DataTable
+              columns={columns}
+              data={paginatedData}
+              currentPage={currentPage}
+              setCurrentPage={setCurrentPage}
+              pageSize={pageSize}
+              setPageSize={setPageSize}
+              totalPages={totalPages}
+              totalRecords={totalRecords}
+              isDropdownOpen={isPageDropdownOpen}
+              setIsDropdownOpen={setIsPageDropdownOpen}
+              dropdownRef={dropdownRef}
+              setError={setTableError}
+              sortColumn={sortColumn}
+              sortOrder={sortOrder}
+              onSort={handleSort}
+            />
+          </div>
+        </div>
+      </div>
+    </>
+  );
+};
+
+export default RequestorArtifactory;
